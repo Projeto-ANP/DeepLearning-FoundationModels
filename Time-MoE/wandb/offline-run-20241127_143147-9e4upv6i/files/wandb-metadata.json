@@ -1,0 +1,58 @@
+{
+  "os":  "Linux-6.8.0-48-generic-x86_64-with-glibc2.39",
+  "python":  "3.11.9",
+  "startedAt":  "2024-11-27T17:31:48.000198Z",
+  "args":  [
+    "-d",
+    "dataset_petroleum_derivatives_normalizados.jsonl",
+    "-m",
+    "Maple728/TimeMoE-200M",
+    "-o",
+    "fine_tuning_200_5_epochs_normalizados/time_moe",
+    "--num_train_epochs",
+    "5"
+  ],
+  "program":  "/home/user/Desktop/LSTM-ALEX/Long_Short_Term_Memory/Time-MoE/main.py",
+  "codePath":  "main.py",
+  "git":  {
+    "remote":  "https://github.com/Time-MoE/Time-MoE.git",
+    "commit":  "8cda362e2f5c5673f1d0abfebf9c5ce37a959620"
+  },
+  "root":  "/home/user/Desktop/LSTM-ALEX/Long_Short_Term_Memory/Time-MoE",
+  "host":  "anp",
+  "username":  "user",
+  "executable":  "/home/user/miniconda3/envs/rapids-24.06/bin/python",
+  "codePathLocal":  "main.py",
+  "cpu_count":  16,
+  "cpu_count_logical":  32,
+  "gpu":  "[NVIDIA GeForce RTX 4090, NVIDIA GeForce RTX 4090]",
+  "gpu_count":  2,
+  "disk":  {
+    "/":  {
+      "total":  "2013991550976",
+      "used":  "160228159488"
+    }
+  },
+  "memory":  {
+    "total":  "134228307968"
+  },
+  "cpu":  {
+    "count":  16,
+    "countLogical":  32
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 4090",
+      "memoryTotal":  "25757220864",
+      "cudaCores":  16384,
+      "architecture":  "Ada"
+    },
+    {
+      "name":  "NVIDIA GeForce RTX 4090",
+      "memoryTotal":  "25757220864",
+      "cudaCores":  16384,
+      "architecture":  "Ada"
+    }
+  ],
+  "cudaVersion":  "12.2"
+}
