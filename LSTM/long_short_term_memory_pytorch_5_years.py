@@ -323,7 +323,6 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
             y_pred = scaler.inverse_transform(y_pred).flatten()
 
         y_test = df[-forecast_steps:].values
-        y_baseline = df[-forecast_steps * 2:-forecast_steps].values
 
         # Evaluation metrics
         y_baseline = df[-forecast_steps*2:-forecast_steps].values
@@ -378,7 +377,7 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
         # Create a DataFrame to store the results
         results_df = pd.DataFrame([{'FORECAST_STEPS': forecast_steps,
                                     'TIME_FORECAST': time_steps,
-                                    'TYPE_PREDICTIONS': 'LSTM_PYTORCH_' + type_predictions,
+                                    'TYPE_PREDICTIONS': 'LSTM_PYTORCH_' + type_predictions + '_5_years',
                                     'STATE': state,
                                     'PRODUCT': product,
                                     'RMSE': np.nan,
@@ -397,7 +396,7 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
         
         results_df = pd.DataFrame([{'FORECAST_STEPS': np.nan,
                                     'TIME_FORECAST': np.nan,
-                                    'TYPE_PREDICTIONS': 'LSTM_PYTORCH' + type_predictions + '_5_years',
+                                    'TYPE_PREDICTIONS': 'LSTM_PYTORCH_' + type_predictions + '_5_years',
                                     'STATE': state,
                                     'PRODUCT': product,
                                     'RMSE': np.nan,
@@ -412,22 +411,19 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
             
     # Save the results to an Excel file if requested
     if bool_save:
-        output_dir = 'result'
-        os.makedirs(output_dir, exist_ok=True)
+        with log_lock:
+            directory = f'results'
+            if not os.path.exists(directory):
+                os.makedirs(directory)
 
-        file_path = os.path.join(output_dir, 'lstm_results_pytorch_5_years.xlsx')
+            file_path = os.path.join(directory, 'lstm_results_pytorch_5_years.xlsx')
+            if os.path.exists(file_path):
+                existing_df = pd.read_excel(file_path)
+            else:
+                existing_df = pd.DataFrame()
 
-        # Load existing results if the file exists
-        if os.path.exists(file_path):
-            existing_df = pd.read_excel(file_path)
-        else:
-            existing_df = pd.DataFrame()
-
-        # Combine new results with existing data and save
-        combined_df = pd.concat([existing_df, results_df], ignore_index=True)
-        combined_df.to_excel(file_path, index=False)
-
-        print(f"Results saved to {file_path}")
+            combined_df = pd.concat([existing_df, results_df], ignore_index=True)
+            combined_df.to_excel(file_path, index=False)
 
     ## Calculate and display the execution time
     end_time = time.time()
@@ -443,7 +439,7 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
         with open("training_log.csv", "a") as log_file:
             log_file.write(log_entry)
 
-def run_lstm_in_thread(forecast_steps, time_steps, epochs, bool_save, batch_size, save_model=None, type_predictions='recursive'):
+def run_lstm_in_thread(forecast_steps, time_steps, epochs, bool_save, batch_size, type_predictions='recursive'):
     """
     Execute LSTM model training in separate processes for different state and product combinations.
 
@@ -453,7 +449,6 @@ def run_lstm_in_thread(forecast_steps, time_steps, epochs, bool_save, batch_size
         - epochs (int): Number of training epochs for the LSTM model.
         - bool_save (bool): Whether to save the trained models (True/False).
         - batch_size (int): Batch size for model training.
-        - save_model (bool, optional): If True, the trained model will be saved. Default is None.
         - type_predictions (str, optional): Type of prediction method ('recursive' or 'direct_dense12'). Default is 'recursive'.
 
     Returns:
@@ -492,7 +487,7 @@ def run_lstm_in_thread(forecast_steps, time_steps, epochs, bool_save, batch_size
                 target=run_lstm,
                 args=(
                     state, product, forecast_steps, time_steps,
-                    data_filtered, epochs, bool_save, save_model,
+                    data_filtered, epochs, bool_save,
                     log_lock, batch_size, type_predictions
                 )
             )
@@ -541,5 +536,3 @@ def product_and_single_thread_testing():
 
     print(f"\nFunction execution time: {execution_time:.2f} seconds")
     print(f"Execution ended at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-
-product_and_single_thread_testing()

@@ -1,6 +1,7 @@
 import torch
 from transformers import AutoModelForCausalLM
 from time_moe.models.modeling_time_moe import TimeMoeForPrediction
+from itertools import product
 
 import tensorflow as tf
 
@@ -145,21 +146,44 @@ def get_scaled_data(df, len_data=None):
 
     return df_scaled, scaler
 
-def create_time_moe_model(forecast_steps, time_steps, data, state, product, type_model='TimeMoE-50M', show_plot=None):
+def create_time_moe_model(
+    forecast_steps, 
+    time_steps, 
+    data, 
+    state, 
+    derivative, 
+    type_model='TimeMoE-50M', 
+    show_plot=None,
+    model='default_model', 
+    norm='none', 
+    learning_rate=1e-3, 
+    lr_scheduler_type='constant',
+    sufix='raw_data'
+):
     """
-    Runs an time_moe model for time series forecasting.
+    Runs a TimeMoE model for time series forecasting.
 
     Parameters:
     - forecast_steps (int): Number of steps ahead for forecasting.
     - time_steps (int): Length of the time sequences for generating the attribute-value table.
     - data (pd.DataFrame): DataFrame containing the time series data.
-    - epochs (int): Number of epochs for training the time_moe model.
     - state (str): The specific state for which the model is trained.
-    - product (str): The specific product for which the model is trained.
-    - batch_size: Batch size for training.
-    - type_model (str, optional): Type of time_moe to be used. Default is 'TimeMoE-50M'.
+    - derivative (str): The specific derivative for which the model is trained.
+    - type_model (str, optional): Type of TimeMoE to be used. Default is 'TimeMoE-50M'.
     - show_plot (bool or None, optional): Whether to display a plot of the forecasted values. Default is None.
+    - model (str): The model architecture to use. Default is 'default_model'.
+    - norm (str): Normalization method. Options are ['none', 'zero'].
+    - dataset (str): Dataset to use. Options are ['dataset_petroleum_derivatives_normalizados', 'dataset_petroleum_derivatives'].
+    - learning_rate (float): Learning rate for the optimizer.
+    - lr_scheduler_type (str): Learning rate scheduler type. Options are ['constant', 'linear', 'cosine'].
 
+    Returns:
+    - rmse_result (float): Root Mean Square Error of the model's predictions.
+    - mape_result (float): Mean Absolute Percentage Error of the model's predictions.
+    - pbe_result (float): Percentage Bias Error of the model's predictions.
+    - pocid_result (float): Percentage of Correct Increase or Decrease.
+    - mase_result (float): Mean Absolute Scaled Error.
+    - y_pred (np.ndarray): Array of predicted values.
     """
 
     df = data['m3']
@@ -171,6 +195,9 @@ def create_time_moe_model(forecast_steps, time_steps, data, state, product, type
 
     tensor = tensor.squeeze(-1).unsqueeze(0)
 
+    ''' 
+    # INFO: ================== ZERO SHOT ==================
+    ''' 
     if type_model == "TimeMoE-50M_ZERO_SHOT":
         model = AutoModelForCausalLM.from_pretrained(
             'Maple728/TimeMoE-50M',
@@ -183,18 +210,24 @@ def create_time_moe_model(forecast_steps, time_steps, data, state, product, type
             device_map="cpu",  
             trust_remote_code=True,
         )
+
+    # INFO: ================== FINE-TUNING RAW DATA ==================
     elif type_model == "TimeMoE-50M-FINE-TUNING":
+        model_path = f"models_fine_tuning/model_50M/{sufix}/{norm}/fine_tuning_50_10_epochs_{sufix}_{learning_rate}_{lr_scheduler_type}/time_moe"
         model = TimeMoeForPrediction.from_pretrained(
-            "../Time-MoE/fine_tuning_50_5_epochs_normalizados/time_moe",
+            model_path,
             device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
             trust_remote_code=True,
         )
     elif type_model == "TimeMoE-200M-FINE-TUNING":
+        model_path = f"models_fine_tuning/model_200M/{sufix}/{norm}/fine_tuning_200_10_epochs_{sufix}_{learning_rate}_{lr_scheduler_type}/time_moe"
         model = TimeMoeForPrediction.from_pretrained(
-            "../Time-MoE/fine_tuning_200_5_epochs_normalizados/time_moe",
+            model_path,
             device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
             trust_remote_code=True,
         )
+
+    # INFO: Maple728/TimeMoE-1.1B
     else:
         model = AutoModelForCausalLM.from_pretrained(
             'Maple728/TimeMoE-1.1B',
@@ -228,54 +261,10 @@ def create_time_moe_model(forecast_steps, time_steps, data, state, product, type
     print(f'PBE: {pbe_result_time_moe}')
     print(f'POCID: {pocid_result_time_moe}')
     print(f'MASE: {mase_result_time_moe}')
-
-    # ========== Resultados Comparação ==========
-
-    df = pd.read_excel('../00-RANKING.xlsx', sheet_name='ALL')
-
-    filtered_df = df[(df['PRODUCT'] == product) & (df['UF'] == state)]
-     
-    filtered_df = filtered_df.fillna(0)
-
-    columns = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11', 'P12']
-
-    # Obter os valores das colunas P1 a P12 como uma lista
-    pontos_comp = filtered_df[columns].values.flatten().tolist()
-    
-    print("\nResultados COMPARAÇÃO: \n")
-    rmse_result = rmse(y_test, pontos_comp)
-    mape_result = mape(y_test, pontos_comp)
-    pbe_result = pbe(y_test, pontos_comp)
-    pocid_result = pocid(y_test, pontos_comp)
-    mase_result = np.mean(np.abs(y_test - pontos_comp)) / np.mean(np.abs(y_test - y_baseline))
-
-    print(f'RMSE: {rmse_result}')
-    print(f'MAPE: {mape_result}')
-    print(f'PBE: {pbe_result}')
-    print(f'POCID: {pocid_result}')
-    print(f'MASE: {mase_result}')
-    
-    sub_dir = None
-
-    if show_plot:
-        plots_dir = f"PLOTS/{type_model}"
-        sub_dir = os.path.join(plots_dir, f"plot_{state}_{product}")
-    
-        os.makedirs(sub_dir, exist_ok=True)
-
-        # Predictions
-        plt.figure(figsize=(12, 3))
-        plt.title('Normalized Predictions')
-        plt.plot(range(len(y_test.T)), y_test.T, label='REAL')
-        plt.plot(range(len(y_test.T)), y_pred, label=type_model)
-        plt.plot(range(len(y_test.T)), pontos_comp, label='COMPARACAO')
-        plt.legend()
-        plt.savefig(os.path.join(sub_dir, f'normalized_predictions.png'))
-        plt.close()
         
     return rmse_result_time_moe, mape_result_time_moe, pbe_result_time_moe, pocid_result_time_moe, mase_result_time_moe, y_pred, 
                     
-def run_time_moe(state, product, forecast_steps, time_steps, data_filtered, bool_save, log_lock, type_model='TimeMoE-50M'):
+def run_time_moe(state, derivative, forecast_steps, time_steps, data_filtered, bool_save, log_lock, type_model='TimeMoE-50M'):
 
     # Set random seeds for reproducibility
     random.seed(42)
@@ -290,54 +279,149 @@ def run_time_moe(state, product, forecast_steps, time_steps, data_filtered, bool
     start_time = time.time()
 
     try:
-        # Run time_moe model training
-        rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = \
-        create_time_moe_model(forecast_steps=forecast_steps, time_steps=time_steps, data=data_filtered, state=state, product=product, type_model=type_model, show_plot=True)
+        if type_model in ['TimeMoE-50M-FINE-TUNING', 'TimeMoE-200M-FINE-TUNING']:
 
-        # Prepare results into a DataFrame
-        results_df = pd.DataFrame([{'FORECAST_STEPS': forecast_steps,
-                                    'TIME_FORECAST': time_steps,
-                                    'TYPE_PREDICTIONS': type_model + '_5_EPOCHS_NORMALIZADOS',
-                                    'STATE': state,
-                                    'PRODUCT': product,
-                                    'RMSE': rmse_result,
-                                    'MAPE': mape_result,
-                                    'PBE': pbe_result,
-                                    'POCID': pocid_result,
-                                    'MASE': mase_result,
-                                    'PREDICTIONS': y_pred,
-                                    'ERROR': np.nan}])
+            if type_model == "TimeMoE-50M-FINE-TUNING":
+                models = [50]
+            else:
+                models = [200]
+
+            norms = ['none', 'zero']
+            datasets = ['dataset_petroleum_derivatives_normalizados', 'dataset_petroleum_derivatives']
+            learning_rates = ['0.001', '0.0001', '5e-05', '2e-05', '1e-06']
+            lr_scheduler_types = ['constant', 'linear', 'cosine']
+
+            parameter_combinations = list(product(models, norms, datasets, learning_rates, lr_scheduler_types))
+
+            # Initialize or load existing results DataFrame
+            file_path = os.path.join('results', 'results_time_moe_fine_tuning_new2.xlsx')
+            if os.path.exists(file_path):
+                combined_df = pd.read_excel(file_path)
+            else:
+                combined_df = pd.DataFrame()
+
+            for model, norm, dataset, learning_rate, lr_scheduler_type in parameter_combinations:
+                try:
+                    print(f"\n=== Forecasting model: {model} ===")
+                    print(f"Type_model: {type_model}")
+                    print(f"Dataset: {dataset}")
+                    print(f"Normalization: {norm}")
+                    print(f"Learning Rate: {learning_rate}")
+                    print(f"LR Scheduler: {lr_scheduler_type}")
+
+                    sufix = 'normalizados' if dataset == 'dataset_petroleum_derivatives_normalizados' else 'raw_data'
+
+                    rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = create_time_moe_model(
+                        forecast_steps=forecast_steps,
+                        time_steps=time_steps,
+                        data=data_filtered,
+                        state=state,
+                        derivative=derivative,
+                        type_model=type_model,
+                        show_plot=False,
+                        model=model,
+                        norm=norm,
+                        learning_rate=learning_rate,
+                        lr_scheduler_type=lr_scheduler_type,
+                        sufix=sufix
+                    )
+
+                    # Add results to DataFrame
+                    results_df = pd.DataFrame([{
+                        'FORECAST_STEPS': forecast_steps,
+                        'TIME_FORECAST': time_steps,
+                        'TYPE_PREDICTIONS': type_model + f"_{sufix}_{norm}_{learning_rate}_{lr_scheduler_type}",
+                        'STATE': state,
+                        'PRODUCT': derivative,
+                        'RMSE': rmse_result,
+                        'MAPE': mape_result,
+                        'PBE': pbe_result,
+                        'POCID': pocid_result,
+                        'MASE': mase_result,
+                        'PREDICTIONS': y_pred,
+                        'ERROR': np.nan
+                    }])
+
+                except Exception as e:
+                    # Handle any exceptions during model training
+                    print(f"An error occurred for derivative '{derivative}' in state '{state}': {e}")
+
+                    results_df = pd.DataFrame([{
+                        'FORECAST_STEPS': np.nan,
+                        'TIME_FORECAST': np.nan,
+                        'TYPE_PREDICTIONS': type_model + f"_{sufix}_{norm}_{learning_rate}_{lr_scheduler_type}",
+                        'STATE': state,
+                        'PRODUCT': derivative,
+                        'RMSE': np.nan,
+                        'MAPE': np.nan,
+                        'PBE': np.nan,
+                        'POCID': np.nan,
+                        'MASE': np.nan,
+                        'PREDICTIONS': np.nan,
+                        'ERROR': f"An error occurred for derivative '{derivative}' in state '{state}': {e}"
+                    }])
+
+                # Append current results to the combined DataFrame
+                combined_df = pd.concat([combined_df, results_df], ignore_index=True)
+
+        else:
+            # Run single TimeMoE model training
+            rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = create_time_moe_model(
+                forecast_steps=forecast_steps,
+                time_steps=time_steps,
+                data=data_filtered,
+                state=state,
+                derivative=derivative,
+                type_model=type_model,
+                show_plot=True
+            )
+
+            results_df = pd.DataFrame([{
+                'FORECAST_STEPS': forecast_steps,
+                'TIME_FORECAST': time_steps,
+                'TYPE_PREDICTIONS': type_model,
+                'STATE': state,
+                'PRODUCT': derivative,
+                'RMSE': rmse_result,
+                'MAPE': mape_result,
+                'PBE': pbe_result,
+                'POCID': pocid_result,
+                'MASE': mase_result,
+                'PREDICTIONS': y_pred,
+                'ERROR': np.nan
+            }])
+
+            combined_df = pd.concat([combined_df, results_df], ignore_index=True)
+
     except Exception as e:
-        # Handle any exceptions during model training
-        print(f"An error occurred for product '{product}' in state '{state}': {e}")
-        
-        results_df = pd.DataFrame([{'FORECAST_STEPS': np.nan,
-                                    'TIME_FORECAST': np.nan,
-                                    'TYPE_PREDICTIONS': type_model + '_5_EPOCHS_NORMALIZADOS',
-                                    'STATE': state,
-                                    'PRODUCT': product,
-                                    'RMSE': np.nan,
-                                    'MAPE': np.nan,
-                                    'PBE': np.nan,
-                                    'POCID': np.nan,
-                                    'MASE': np.nan,
-                                    'PREDICTIONS': np.nan,
-                                    'ERROR': f"An error occurred for product '{product}' in state '{state}': {e}"}])
-            
-    # Save results to an Excel file if specified
+        # Handle exceptions outside of iterations
+        print(f"An error occurred for derivative '{derivative}' in state '{state}': {e}")
+
+        results_df = pd.DataFrame([{
+            'FORECAST_STEPS': np.nan,
+            'TIME_FORECAST': np.nan,
+            'TYPE_PREDICTIONS': type_model,
+            'STATE': state,
+            'PRODUCT': derivative,
+            'RMSE': np.nan,
+            'MAPE': np.nan,
+            'PBE': np.nan,
+            'POCID': np.nan,
+            'MASE': np.nan,
+            'PREDICTIONS': np.nan,
+            'ERROR': f"An error occurred for derivative '{derivative}' in state '{state}': {e}"
+        }])
+
+        combined_df = pd.concat([combined_df, results_df], ignore_index=True)
+
+    # Save results to Excel file
     if bool_save:
-        directory = f'results'
+        directory = 'results'
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        file_path = os.path.join(directory, 'results_time_moe.xlsx')
-        if os.path.exists(file_path):
-            existing_df = pd.read_excel(file_path)
-        else:
-            existing_df = pd.DataFrame()
-
-        combined_df = pd.concat([existing_df, results_df], ignore_index=True)
         combined_df.to_excel(file_path, index=False)
+
 
     # Calculate and print the execution time
     end_time = time.time()
@@ -354,20 +438,20 @@ def run_all_in_thread(forecast_steps, time_steps, bool_save, type_model='TimeMoE
     # Load the combined dataset
     all_data = pd.read_csv('../database/combined_data.csv', sep=";")
 
-    # Initialize a dictionary to store products for each state
-    state_product_dict = {}
+    # Initialize a dictionary to store derivatives for each state
+    state_derivative_dict = {}
 
     # Iterate over unique states
     for state in all_data['state'].unique():
-        # Filter products corresponding to this state
-        products = all_data[all_data['state'] == state]['product'].unique()
+        # Filter derivatives corresponding to this state
+        derivatives = all_data[all_data['state'] == state]['product'].unique()
         # Add to the dictionary
-        state_product_dict[state] = list(products)
+        state_derivative_dict[state] = list(derivatives)
 
-    # Loop through each state and its products
-    for state, products in state_product_dict.items():
-        for product in products:
-            print(f"========== State: {state}, product: {product} ==========")
+    # Loop through each state and its derivatives
+    for state, derivatives in state_derivative_dict.items():
+        for derivative in derivatives:
+            print(f"========== State: {state}, derivative: {derivative} ==========")
            
             # Set random seeds for reproducibility
             random.seed(42)
@@ -376,14 +460,14 @@ def run_all_in_thread(forecast_steps, time_steps, bool_save, type_model='TimeMoE
             os.environ['PYTHONHASHSEED'] = str(42)
             tf.keras.utils.set_random_seed(42)
 
-            # Filter data for the current state and product
-            data_filtered = all_data[(all_data['state'] == state) & (all_data['product'] == product)]
+            # Filter data for the current state and derivative
+            data_filtered = all_data[(all_data['state'] == state) & (all_data['product'] == derivative)]
             
-            thread = multiprocessing.Process(target=run_time_moe, args=(state, product, forecast_steps, time_steps, data_filtered, bool_save, log_lock, type_model))
+            thread = multiprocessing.Process(target=run_time_moe, args=(state, derivative, forecast_steps, time_steps, data_filtered, bool_save, log_lock, type_model))
             thread.start()
             thread.join()  # Wait for the thread to finish execution
 
-def product_and_single_thread_testing():    
+def derivative_and_single_thread_testing():    
     """
     Perform a simple training thread using time_moe model for time series forecasting.
 
@@ -404,12 +488,12 @@ def product_and_single_thread_testing():
     tf.keras.utils.set_random_seed(42)
 
     state = "sp"
-    product = "gasolinac"
+    derivative = "gasolinac"
     
     # Loading and preparing data
-    data_filtered_test = pd.read_csv(f"../database/venda_process/mensal/uf/{product}/mensal_{state}_{product}.csv", sep=";",  parse_dates=['timestamp'], date_parser=convert_date)
+    data_filtered_test = pd.read_csv(f"../database/venda_process/mensal/uf/{derivative}/mensal_{state}_{derivative}.csv", sep=";",  parse_dates=['timestamp'], date_parser=convert_date)
 
-    print(f" ========== Starting univariate test for the state of {state} - {product} ==========")
+    print(f" ========== Starting univariate test for the state of {state} - {derivative} ==========")
 
     # Recording start time of execution
     start_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -417,9 +501,25 @@ def product_and_single_thread_testing():
     start_time = time.time()
 
     # Running the time_moe model
-    rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = \
-    create_time_moe_model(forecast_steps=12, time_steps=12, data=data_filtered_test, state=state, product=product,
-                    type_model='TimeMoE-200M_ZERO_SHOT', show_plot=True)
+
+    # rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = \
+    # create_time_moe_model(forecast_steps=12, time_steps=12, data=data_filtered_test, state=state, derivative=derivative,
+    #                 type_model='TimeMoE-200M-FINE-TUNING', show_plot=True)
+
+    rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = create_time_moe_model(
+                forecast_steps= 12, 
+                time_steps= 12, 
+                data= data_filtered_test,  
+                state= state, 
+                derivative= derivative, 
+                type_model="TimeMoE-200M-FINE-TUNING", 
+                show_plot=True,
+                model= "200", 
+                norm= "none", 
+                learning_rate="1e-06", 
+                lr_scheduler_type="linear",
+                sufix= "raw_data"
+     )
 
     # Recording end time and calculating execution duration
     end_time = time.time()

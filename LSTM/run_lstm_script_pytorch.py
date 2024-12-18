@@ -1,18 +1,15 @@
 import sys
 from long_short_term_memory_pytorch import run_lstm_in_thread
 
-def main(forecast_steps, time_steps, epochs, verbose, bool_save, save_model, batch_size, type_predictions, type_lstm):
-    run_lstm_in_thread(forecast_steps=forecast_steps, time_steps=time_steps, epochs=epochs, verbose=verbose, bool_save=bool_save,  save_model=False, batch_size= batch_size, type_predictions=type_predictions, type_lstm=type_lstm)
+def main(forecast_steps, time_steps, epochs, bool_save, batch_size, type_predictions):
+    run_lstm_in_thread(forecast_steps=forecast_steps, time_steps=time_steps, epochs=epochs, bool_save=bool_save, batch_size= batch_size, type_predictions=type_predictions)
 
 if __name__ == "__main__":
     forecast_steps = int(sys.argv[1])
     time_steps = int(sys.argv[2])
     epochs = int(sys.argv[3])
-    verbose = int(sys.argv[4])
-    bool_save = sys.argv[5]
-    save_model = sys.argv[6]
-    batch_size =  int(sys.argv[7])
-    type_predictions = str(sys.argv[8].lower())
-    type_lstm = str(sys.argv[9].upper())
+    bool_save = sys.argv[4]
+    batch_size =  int(sys.argv[5])
+    type_predictions = str(sys.argv[6].lower())
 
-    main(forecast_steps, time_steps, epochs, verbose, bool_save, save_model, batch_size, type_predictions, type_lstm)
+    main(forecast_steps, time_steps, epochs, bool_save, batch_size, type_predictions)
