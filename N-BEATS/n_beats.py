@@ -16,11 +16,9 @@ from matplotlib import pyplot as plt
 import warnings
 from warnings import simplefilter
 
-from metrics_forecasting import rmse, pbe, pocid, mase
+from metrics_forecasting import rrmse, pbe, pocid, mase
 from sklearn.metrics import mean_squared_error as mse
 from sklearn.preprocessing import MinMaxScaler
-
-from functions_forecasting import recursive_multistep_forecasting
 
 warnings.filterwarnings("ignore")
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -63,65 +61,50 @@ def get_scaled_data(df, len_data=None):
     return df_scaled, scaler
 
 def create_nbeats_model(forecast_steps, time_steps, data):
-    y_preds_5_years = []
-
-    data['timestamp'] = pd.to_datetime(data['timestamp'], errors='coerce')
-
-    end_date = data['timestamp'].max()
-
-    for years in range(5, 0, -1):
-        start_date = end_date - pd.DateOffset(years=years-1)
-
-        df = data[data['timestamp'] <= start_date]
-        print(f'\nData filtered for {start_date.date()}\n')
-        df = df['m3']
-
-        len_data = None
-        df_scaled, scaler = get_scaled_data(df, len_data)
-
-        # Converter dados para TimeSeries do Darts
-        series = TimeSeries.from_values(df_scaled)
-
-        # Modelo N-BEATS
-        model = NBEATSModel(
-            input_chunk_length=12,
-            output_chunk_length=1,
-            n_epochs=50,
-            batch_size=16,
-            random_state=42,
-            activation='LeakyReLU',
-            pl_trainer_kwargs={"accelerator": "gpu", "devices": 1}
-        )
-
-        model.fit(series)
-
-        forecast = model.predict(12)
-
-        y_pred = scaler.inverse_transform(forecast.values().reshape(-1, 1))
-        y_pred = y_pred.flatten()
-
-        y_test = df[-12:].values
-
-        # Evaluation metrics
-        y_baseline = df[-forecast_steps*2:-forecast_steps].values
-        rmse_result_n_beats = rmse(y_test, y_pred)
-        mape_result_n_beats = mape(y_test, y_pred)
-        pbe_result_n_beats = pbe(y_test, y_pred)
-        pocid_result_n_beats = pocid(y_test, y_pred)
-        mase_result_n_beats = np.mean(np.abs(y_test - y_pred)) / np.mean(np.abs(y_test - y_baseline))
-
-        print("\nResultado n_beats: \n")
-        print(f'RMSE: {rmse_result_n_beats}')
-        print(f'MAPE: {mape_result_n_beats}')
-        print(f'PBE: {pbe_result_n_beats}')
-        print(f'POCID: {pocid_result_n_beats}')
-        print(f'MASE: {mase_result_n_beats}')
+   
+    df = data['m3']
     
-        # return rmse_result_n_beats, mape_result_n_beats, pbe_result_n_beats, pocid_result_n_beats, mase_result_n_beats, y_pred, batch_size
-        y_preds_5_years.append(y_pred)
-    
-    return np.concatenate(y_preds_5_years).tolist()
-                      
+    df_scaled, scaler = get_scaled_data(df, None)
+
+    series = TimeSeries.from_values(df_scaled)
+
+    # Modelo N-BEATS
+    model = NBEATSModel(
+        input_chunk_length=12,
+        output_chunk_length=1,
+        n_epochs=50,
+        batch_size=16,
+        random_state=42,
+        activation='LeakyReLU',
+        pl_trainer_kwargs={"accelerator": "gpu", "devices": 1}
+    )
+
+    model.fit(series)
+
+    forecast = model.predict(12)
+
+    y_pred = scaler.inverse_transform(forecast.values().reshape(-1, 1))
+    y_pred = y_pred.flatten()
+
+    y_test = df[-12:].values
+
+   # Calculating evaluation metrics
+    y_baseline = df[-forecast_steps*2:-forecast_steps].values
+    rrmse_result_time_moe = rrmse(y_test, y_pred, df[:-12].mean())
+    mape_result_time_moe = mape(y_test, y_pred)
+    pbe_result_time_moe = pbe(y_test, y_pred)
+    pocid_result_time_moe = pocid(y_test, y_pred)
+    mase_result_time_moe = np.mean(np.abs(y_test - y_pred)) / np.mean(np.abs(y_test - y_baseline))
+
+    print(f"\nResultados N-BEATS: \n")
+    print(f'RRMSE: {rrmse_result_time_moe}')
+    print(f'MAPE: {mape_result_time_moe}')
+    print(f'PBE: {pbe_result_time_moe}')
+    print(f'POCID: {pocid_result_time_moe}')
+    print(f'MASE: {mase_result_time_moe}')
+        
+    return rrmse_result_time_moe, mape_result_time_moe, pbe_result_time_moe, pocid_result_time_moe, mase_result_time_moe, y_pred, 
+
 def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_save, log_lock):
     """
     Execute nbeats model training and save the results to an Excel file.
@@ -146,7 +129,7 @@ def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_s
 
     try:
         # Run nbeats model training and capture performance metrics
-        y_pred = \
+        rrmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = \
         create_nbeats_model(forecast_steps=forecast_steps, time_steps=time_steps, data=data_filtered)
         
         # Create a DataFrame to store the results
@@ -155,12 +138,11 @@ def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_s
                                     'TYPE_PREDICTIONS': 'N-BEATS',
                                     'STATE': state,
                                     'PRODUCT': product,
-                                    'RMSE': np.nan,
-                                    'RRMSE': np.nan,
-                                    'MAPE': np.nan,
-                                    'PBE': np.nan,
-                                    'POCID': np.nan,
-                                    'MASE': np.nan,
+                                    'RRMSE': rrmse_result,
+                                    'MAPE': mape_result,
+                                    'PBE': pbe_result,
+                                    'POCID': pocid_result,
+                                    'MASE': mase_result,
                                     'PREDICTIONS': y_pred,
                                     'ERROR': np.nan}])
         
@@ -173,7 +155,6 @@ def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_s
                                     'TYPE_PREDICTIONS': 'N-BEATS',
                                     'STATE': state,
                                     'PRODUCT': product,
-                                    'RMSE': np.nan,
                                     'RRMSE': np.nan,
                                     'MAPE': np.nan,
                                     'PBE': np.nan,
@@ -185,11 +166,11 @@ def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_s
     # Save the results to an Excel file if requested
     if bool_save:
         with log_lock:
-            directory = f'results'
+            directory = f'results_model_local'
             if not os.path.exists(directory):
                 os.makedirs(directory)
 
-            file_path = os.path.join(directory, 'nbeats_results_pytorch_5_years.xlsx')
+            file_path = os.path.join(directory, 'nbeats_results.xlsx')
             if os.path.exists(file_path):
                 existing_df = pd.read_excel(file_path)
             else:

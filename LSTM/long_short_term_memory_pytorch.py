@@ -23,7 +23,7 @@ from matplotlib import pyplot as plt
 import warnings
 from warnings import simplefilter
 
-from metrics_lstm import rmse, pbe, pocid, mase
+from metrics_lstm import rrmse, pbe, pocid, mase
 from sklearn.metrics import mean_squared_error as mse
 from sklearn.preprocessing import MinMaxScaler
 
@@ -56,13 +56,6 @@ def convert_date(date_string):
     year = int(year_month[:4])
     month = int(year_month[4:])
     return pd.Timestamp(year=year, month=month, day=1)
-
-def create_dataset_recursive(data, time_steps=1):
-    X, y = [], []
-    for i in range(len(data) - time_steps):
-        X.append(data[i:(i + time_steps), 0])
-        y.append(data[i + time_steps, 0])
-    return np.array(X), np.array(y)
 
 def create_dataset_direct(data, time_steps=1, forecast_steps=1):
     X, y = [], []
@@ -123,51 +116,30 @@ def train_test_split_cisia(data, horizon, type_predictions):
     return X_train, X_test, y_train, y_test
 
 def recursive_multistep_forecasting(X_test, model, horizon, device):
-    # Converter o X_test para tensor do PyTorch
-    model.eval()  # Colocar o modelo em modo de avaliação
-    example = torch.tensor(X_test[0].reshape(1, X_test.shape[1], X_test.shape[2]), dtype=torch.float32).to(device)  # Mover o tensor para a GPU
+    model.eval() 
+    example = torch.tensor(X_test[0].reshape(1, X_test.shape[1], X_test.shape[2]), dtype=torch.float32).to(device) 
 
     preds = []
     for i in range(horizon):
         with torch.no_grad():
-            # Realizar a previsão com o modelo
-            pred = model(example).cpu().numpy()[0]  # Mover para CPU para converter para numpy
+            pred = model(example).cpu().numpy()[0]
         preds.append(pred)
 
-        # Descartar o valor da primeira posição e adicionar o predito
-        example = example[:, 1:, :]  # Remove o primeiro valor
-        pred_tensor = torch.tensor(pred.reshape(1, 1, -1), dtype=torch.float32).to(device)  # Mover o tensor de previsão para a GPU
-        example = torch.cat((example, pred_tensor), dim=1)  # Adiciona a previsão no final
+        example = example[:, 1:, :] 
+        pred_tensor = torch.tensor(pred.reshape(1, 1, -1), dtype=torch.float32).to(device)  
+        example = torch.cat((example, pred_tensor), dim=1)  
 
     return np.array(preds)
 
-def train_test_stats(data, horizon):
-  train, test = data[:-horizon], data[-horizon:]
-  return train, test
-
-def reverse_diff(last_value_train, preds):    
-    preds_series = pd.Series(preds)
-    preds = pd.concat([last_value_train, preds_series], ignore_index=True)
-    preds_cumsum = preds.cumsum()
-
-    return preds_cumsum[1:].values
-
 def set_seed(seed_value=42):
-    # Fixar semente para o Python
     random.seed(seed_value)
-
-    # Fixar semente para o NumPy
     np.random.seed(seed_value)
-
-    # Fixar semente para o PyTorch (CPU)
     torch.manual_seed(seed_value)
 
-    # Fixar semente para o PyTorch (GPU) se estiver usando
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed_value)
-        torch.cuda.manual_seed_all(seed_value)  # Para múltiplas GPUs
+        torch.cuda.manual_seed_all(seed_value)  
         
-    # Assegurar que alguns comportamentos indeterminísticos sejam evitados
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -187,11 +159,11 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
         - show_plot (bool, optional): Flag to display and save plots of predictions.
 
     Returns:
-        - rmse_result_lstm (float): RMSE score for the LSTM model.
-        - mape_result_lstm (float): MAPE score for the LSTM model.
-        - pbe_result_lstm (float): PBE score for the LSTM model.
-        - pocid_result_lstm (float): POCID score for the LSTM model.
-        - mase_result_lstm (float): MASE score for the LSTM model.
+        - rrmse_result_lstm (float).
+        - mape_result_lstm (float).
+        - pbe_result_lstm (float).
+        - pocid_result_lstm (float).
+        - mase_result_lstm (float).
         - y_pred (ndarray): Predicted values.
         - batch_size (int): Batch size used for training.
     """
@@ -243,10 +215,10 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
     X_test = torch.tensor(X_test, dtype=torch.float32).unsqueeze(-1)
 
     
-    print("X_train_val shape:", X_train_val.shape)
-    print("y_train_val shape:", y_train_val.shape)
-    print("X_train_val:", X_train_val)
-    print("y_train_val:", y_train_val)
+    # print("X_train_val shape:", X_train_val.shape)
+    # print("y_train_val shape:", y_train_val.shape)
+    # print("X_train_val:", X_train_val)
+    # print("y_train_val:", y_train_val)
 
     # Define LSTM model
     class LSTMModel(nn.Module):
@@ -326,64 +298,20 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
 
     # Evaluation metrics
     y_baseline = df[-forecast_steps*2:-forecast_steps].values
-    rmse_result_lstm = rmse(y_test, y_pred)
+    rrmse_result_lstm = rrmse(y_test, y_pred, df[:-12].mean())
     mape_result_lstm = mape(y_test, y_pred)
     pbe_result_lstm = pbe(y_test, y_pred)
     pocid_result_lstm = pocid(y_test, y_pred)
     mase_result_lstm = np.mean(np.abs(y_test - y_pred)) / np.mean(np.abs(y_test - y_baseline))
 
-    print("\nResultados LSTM: \n")
-    print(f'RMSE: {rmse_result_lstm}')
+    print(f"\nResultados modelo: LSTM_{type_predictions} \n")
+    print(f'RRMSE: {rrmse_result_lstm}')
     print(f'MAPE: {mape_result_lstm}')
     print(f'PBE: {pbe_result_lstm}')
     print(f'POCID: {pocid_result_lstm}')
     print(f'MASE: {mase_result_lstm}')
-
-    # ========== Resultados Comparação ==========
-
-    df = pd.read_excel('../00-RANKING.xlsx', sheet_name='ALL')
-
-    filtered_df = df[(df['PRODUCT'] == product) & (df['UF'] == state)]
-     
-    filtered_df = filtered_df.fillna(0)
-
-    columns = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11', 'P12']
-
-    # Obter os valores das colunas P1 a P12 como uma lista
-    pontos_comp = filtered_df[columns].values.flatten().tolist()
-    
-    print("\nResultados COMPARAÇÃO: \n")
-    rmse_result = rmse(y_test, pontos_comp)
-    mape_result = mape(y_test, pontos_comp)
-    pbe_result = pbe(y_test, pontos_comp)
-    pocid_result = pocid(y_test, pontos_comp)
-    mase_result = np.mean(np.abs(y_test - pontos_comp)) / np.mean(np.abs(y_test - y_baseline))
-
-    print(f'RMSE: {rmse_result}')
-    print(f'MAPE: {mape_result}')
-    print(f'PBE: {pbe_result}')
-    print(f'POCID: {pocid_result}')
-    print(f'MASE: {mase_result}')
-    
-    sub_dir = None
-
-    if show_plot:
-        plots_dir = f"PLOTS_PYTORCH/LSTM_{type_predictions}"
-        sub_dir = os.path.join(plots_dir, f"plot_{state}_{product}_{time_steps}_{type_predictions}")
-    
-        os.makedirs(sub_dir, exist_ok=True)
-
-        # Predictions
-        plt.figure(figsize=(12, 3))
-        plt.title('Normalized Predictions')
-        plt.plot(range(len(y_test.T)), y_test.T, label='REAL')
-        plt.plot(range(len(y_test.T)), y_pred, label='LSTM')
-        plt.plot(range(len(y_test.T)), pontos_comp, label='COMPARACAO')
-        plt.legend()
-        plt.savefig(os.path.join(sub_dir, f'normalized_predictions_{type_predictions}.png'))
-        plt.close()
         
-    return rmse_result_lstm, mape_result_lstm, pbe_result_lstm, pocid_result_lstm, mase_result_lstm, y_pred, batch_size
+    return rrmse_result_lstm, mape_result_lstm, pbe_result_lstm, pocid_result_lstm, mase_result_lstm, y_pred, batch_size
                     
 def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, bool_save, log_lock, batch_size, type_predictions='recursive'):
     """
@@ -412,7 +340,7 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
 
     try:
         # Run LSTM model training and capture performance metrics
-        rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred, batch_size = \
+        rrmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred, batch_size = \
         create_lstm_model(forecast_steps=forecast_steps, time_steps=time_steps, epochs=epochs, data=data_filtered, state=state, product=product, batch_size=batch_size, type_predictions=type_predictions, show_plot=True)
         
         # Create a DataFrame to store the results
@@ -421,8 +349,7 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
                                     'TYPE_PREDICTIONS': 'LSTM_PYTORCH_' + type_predictions,
                                     'STATE': state,
                                     'PRODUCT': product,
-                                    'RMSE': rmse_result,
-                                    'RRMSE': np.nan,
+                                    'RRMSE': rrmse_result,
                                     'MAPE': mape_result,
                                     'PBE': pbe_result,
                                     'POCID': pocid_result,
@@ -439,7 +366,6 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
                                     'TYPE_PREDICTIONS': 'LSTM_PYTORCH_' + type_predictions,
                                     'STATE': state,
                                     'PRODUCT': product,
-                                    'RMSE': np.nan,
                                     'RRMSE': np.nan,
                                     'MAPE': np.nan,
                                     'PBE': np.nan,
@@ -452,7 +378,7 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
     # Save the results to an Excel file if requested
     if bool_save:
         with log_lock:
-            directory = f'results'
+            directory = f'results_model_local'
             if not os.path.exists(directory):
                 os.makedirs(directory)
 

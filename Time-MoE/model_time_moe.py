@@ -24,7 +24,7 @@ from matplotlib import pyplot as plt
 import warnings
 from warnings import simplefilter
 
-from metrics_time_moe import rmse, pbe, pocid, mase # type: ignore
+from metrics_time_moe import rrmse, pbe, pocid, mase # type: ignore
 from sklearn.metrics import mean_squared_error as mse
 from sklearn.preprocessing import MinMaxScaler
 
@@ -56,84 +56,6 @@ def convert_date(date_string):
     month = int(year_month[4:])
     return pd.Timestamp(year=year, month=month, day=1)
 
-def create_dataset_recursive(data, time_steps=1):
-    X, y = [], []
-    for i in range(len(data) - time_steps):
-        X.append(data[i:(i + time_steps), 0])
-        y.append(data[i + time_steps, 0])
-    return np.array(X), np.array(y)
-
-def create_dataset_direct(data, time_steps=1, forecast_steps=1):
-    X, y = [], []
-    for i in range(len(data) - time_steps - forecast_steps + 1):
-        X.append(data[i:(i + time_steps), 0])
-        y.append(data[i + time_steps:i + time_steps + forecast_steps, 0])
-    return np.array(X), np.array(y)
-
-def rolling_window(series, window):
-    """
-    Generate rolling window data for time series analysis.
-
-    Parameters:
-    - series: array-like, time series data
-    - window: int, size of the rolling window
-
-    Returns:
-    - df: pandas DataFrame, containing the rolling window data
-    - scaler: MinMaxScaler object, used for normalization
-    """
-    data = []
-   
-    for i in range(len(series) - window):
-        example = np.array(series[i:i + window + 1])
-        data.append(example)
-
-    df = pd.DataFrame(data)
-    df = df.dropna()
-    return df
-
-def train_test_split_cisia(data, horizon):
-    
-    X = data.iloc[:,:-1] # features
-    y = data.iloc[:,-1] # target
-
-    X_train = X[:-horizon] # features train
-    X_test =  X[-horizon:] # features test
-
-    y_train = y[:-horizon] # target train
-    y_test = y[-horizon:] # target test
-
-    return X_train, X_test, y_train, y_test
-
-def recursive_multistep_forecasting(X_test, model, horizon):
-  # example é composto pelas últimas observações vistas
-  # na prática, é o primeiro exemplo do conjunto de teste
-  example = X_test[0].reshape(1,-1)
-
-  preds = []
-  for i in range(horizon):
-    pred = model.predict(example)[0]
-    preds.append(pred)
-
-    # Descartar o valor da primeira posição do vetor de características
-    example = example[:,1:]
-
-    # Adicionar o valor predito na última posição do vetor de características
-    example = np.append(example, pred)
-    example = example.reshape(1,-1)
-  return preds
-
-def train_test_stats(data, horizon):
-  train, test = data[:-horizon], data[-horizon:]
-  return train, test
-
-def reverse_diff(last_value_train, preds):    
-    preds_series = pd.Series(preds)
-    preds = pd.concat([last_value_train, preds_series], ignore_index=True)
-    preds_cumsum = preds.cumsum()
-
-    return preds_cumsum[1:].values
-
 def get_scaled_data(df, len_data=None):
     df = df[:-12]
     
@@ -156,7 +78,7 @@ def create_time_moe_model(
     show_plot=None,
     model='default_model', 
     norm='none', 
-    learning_rate=1e-3, 
+    learning_rate=1e-6, 
     lr_scheduler_type='constant',
     sufix='raw_data'
 ):
@@ -178,11 +100,11 @@ def create_time_moe_model(
     - lr_scheduler_type (str): Learning rate scheduler type. Options are ['constant', 'linear', 'cosine'].
 
     Returns:
-    - rmse_result (float): Root Mean Square Error of the model's predictions.
-    - mape_result (float): Mean Absolute Percentage Error of the model's predictions.
-    - pbe_result (float): Percentage Bias Error of the model's predictions.
-    - pocid_result (float): Percentage of Correct Increase or Decrease.
-    - mase_result (float): Mean Absolute Scaled Error.
+    - rrmse_result (float).
+    - mape_result (float).
+    - pbe_result (float).
+    - pocid_result (float).
+    - mase_result (float).
     - y_pred (np.ndarray): Array of predicted values.
     """
 
@@ -195,35 +117,56 @@ def create_time_moe_model(
 
     tensor = tensor.squeeze(-1).unsqueeze(0)
 
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    tensor = tensor.to(device)
+
     ''' 
     # INFO: ================== ZERO SHOT ==================
     ''' 
     if type_model == "TimeMoE-50M_ZERO_SHOT":
         model = AutoModelForCausalLM.from_pretrained(
             'Maple728/TimeMoE-50M',
-            device_map="cpu",  
+            device_map="cuda",  
             trust_remote_code=True,
         )
     elif type_model == "TimeMoE-200M_ZERO_SHOT":
         model = AutoModelForCausalLM.from_pretrained(
             'Maple728/TimeMoE-200M',
-            device_map="cpu",  
+            device_map="cuda",  
             trust_remote_code=True,
         )
 
-    # INFO: ================== FINE-TUNING RAW DATA ==================
-    elif type_model == "TimeMoE-50M-FINE-TUNING":
-        model_path = f"models_fine_tuning/model_50M/{sufix}/{norm}/fine_tuning_50_10_epochs_{sufix}_{learning_rate}_{lr_scheduler_type}/time_moe"
+    # INFO: ================== FINE-TUNING GLOBAL ==================
+    elif type_model == "TimeMoE-50M-FINE-TUNING-GLOBAL":
+        model_path = f"models_fine_tuning_global_artigo/model_50M/{norm}/fine_tuning_50_10_epochs_{learning_rate}/time_moe"
+        # model_path = f"models_fine_tuning/model_50M/{sufix}/{norm}/fine_tuning_50_10_epochs_{sufix}_{learning_rate}_{lr_scheduler_type}/time_moe"
         model = TimeMoeForPrediction.from_pretrained(
             model_path,
-            device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
+            device_map="cuda", 
             trust_remote_code=True,
         )
-    elif type_model == "TimeMoE-200M-FINE-TUNING":
-        model_path = f"models_fine_tuning/model_200M/{sufix}/{norm}/fine_tuning_200_10_epochs_{sufix}_{learning_rate}_{lr_scheduler_type}/time_moe"
+    elif type_model == "TimeMoE-200M-FINE-TUNING-GLOBAL":
+        model_path = f"models_fine_tuning_global_artigo/model_200M/{norm}/fine_tuning_200_10_epochs_{learning_rate}/time_moe"
+        # model_path = f"models_fine_tuning/model_200M/{sufix}/{norm}/fine_tuning_200_10_epochs_{sufix}_{learning_rate}_{lr_scheduler_type}/time_moe"
         model = TimeMoeForPrediction.from_pretrained(
             model_path,
-            device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
+            device_map="cuda", 
+            trust_remote_code=True,
+        )
+    
+    # INFO: ================== FINE-TUNING INDIVIDUAL ==================
+    elif type_model == "TimeMoE-50M-FINE-TUNING-INDIV":
+        model_path = f"models_fine_tuning_individual_artigo/model_50M/{norm}/fine_tuning_50_{state}_{derivative}_10_epochs_{learning_rate}/time_moe"
+        model = TimeMoeForPrediction.from_pretrained(
+            model_path,
+            device_map="cuda", 
+            trust_remote_code=True,
+        )
+    elif type_model == "TimeMoE-200M-FINE-TUNING-INDIV":
+        model_path = f"models_fine_tuning_individual_artigo/model_200M/{norm}/fine_tuning_200_{state}_{derivative}_10_epochs_{learning_rate}/time_moe"
+        model = TimeMoeForPrediction.from_pretrained(
+            model_path,
+            device_map="cuda", 
             trust_remote_code=True,
         )
 
@@ -231,14 +174,18 @@ def create_time_moe_model(
     else:
         model = AutoModelForCausalLM.from_pretrained(
             'Maple728/TimeMoE-1.1B',
-            device_map="cpu",  # use "cpu" for CPU inference, and "cuda" for GPU inference.
+            device_map="cuda", 
             trust_remote_code=True,
         )
+
+    model.to(device)
 
     # forecast
     prediction_length = 12
     output = model.generate(tensor, max_new_tokens=prediction_length)  
-    forecast = output[:, -prediction_length:]  
+    forecast = output[:, -prediction_length:] 
+
+    forecast = forecast.cpu().numpy() 
    
     gc.collect() 
 
@@ -249,20 +196,20 @@ def create_time_moe_model(
 
     # Calculating evaluation metrics
     y_baseline = df[-forecast_steps*2:-forecast_steps].values
-    rmse_result_time_moe = rmse(y_test, y_pred)
+    rrmse_result_time_moe = rrmse(y_test, y_pred, df[:-12].mean())
     mape_result_time_moe = mape(y_test, y_pred)
     pbe_result_time_moe = pbe(y_test, y_pred)
     pocid_result_time_moe = pocid(y_test, y_pred)
     mase_result_time_moe = np.mean(np.abs(y_test - y_pred)) / np.mean(np.abs(y_test - y_baseline))
 
-    print("\nResultados Time-MOE: \n")
-    print(f'RMSE: {rmse_result_time_moe}')
+    print(f"\nResultados Time-MOE modelo: {type_model} \n")
+    print(f'RRMSE: {rrmse_result_time_moe}')
     print(f'MAPE: {mape_result_time_moe}')
     print(f'PBE: {pbe_result_time_moe}')
     print(f'POCID: {pocid_result_time_moe}')
     print(f'MASE: {mase_result_time_moe}')
         
-    return rmse_result_time_moe, mape_result_time_moe, pbe_result_time_moe, pocid_result_time_moe, mase_result_time_moe, y_pred, 
+    return rrmse_result_time_moe, mape_result_time_moe, pbe_result_time_moe, pocid_result_time_moe, mase_result_time_moe, y_pred, 
                     
 def run_time_moe(state, derivative, forecast_steps, time_steps, data_filtered, bool_save, log_lock, type_model='TimeMoE-50M'):
 
@@ -279,39 +226,40 @@ def run_time_moe(state, derivative, forecast_steps, time_steps, data_filtered, b
     start_time = time.time()
 
     try:
-        if type_model in ['TimeMoE-50M-FINE-TUNING', 'TimeMoE-200M-FINE-TUNING']:
+        df_all_results = pd.DataFrame()
+            
+        if type_model in ['TimeMoE-50M-FINE-TUNING-INDIV', 'TimeMoE-200M-FINE-TUNING-INDIV', 'TimeMoE-50M-FINE-TUNING-GLOBAL', 'TimeMoE-200M-FINE-TUNING-GLOBAL']:
 
-            if type_model == "TimeMoE-50M-FINE-TUNING":
+            if type_model in ["TimeMoE-50M-FINE-TUNING", 'TimeMoE-50M-FINE-TUNING-GLOBAL']:
                 models = [50]
             else:
                 models = [200]
 
-            norms = ['none', 'zero']
-            datasets = ['dataset_petroleum_derivatives_normalizados', 'dataset_petroleum_derivatives']
-            learning_rates = ['0.001', '0.0001', '5e-05', '2e-05', '1e-06']
-            lr_scheduler_types = ['constant', 'linear', 'cosine']
+            # norms = ['none', 'zero']
+            # datasets = ['dataset_petroleum_derivatives_normalizados', 'dataset_petroleum_derivatives']
+            # learning_rates = ['0.001', '0.0001', '5e-05', '2e-05', '1e-06']
+            # lr_scheduler_types = ['constant', 'linear', 'cosine']
 
-            parameter_combinations = list(product(models, norms, datasets, learning_rates, lr_scheduler_types))
+            # parameter_combinations = list(product(models, norms, datasets, learning_rates, lr_scheduler_types))
 
-            # Initialize or load existing results DataFrame
-            file_path = os.path.join('results', 'results_time_moe_fine_tuning_new2.xlsx')
-            if os.path.exists(file_path):
-                combined_df = pd.read_excel(file_path)
-            else:
-                combined_df = pd.DataFrame()
+            norms = ['zero']
+            datasets = ['dataset_petroleum_derivatives_global']
+            learning_rates = ['1e-06']
 
-            for model, norm, dataset, learning_rate, lr_scheduler_type in parameter_combinations:
+            parameter_combinations = list(product(models, norms, datasets, learning_rates))
+            # print(parameter_combinations)
+
+            for model, norm, dataset, learning_rate in parameter_combinations:
                 try:
                     print(f"\n=== Forecasting model: {model} ===")
                     print(f"Type_model: {type_model}")
                     print(f"Dataset: {dataset}")
                     print(f"Normalization: {norm}")
                     print(f"Learning Rate: {learning_rate}")
-                    print(f"LR Scheduler: {lr_scheduler_type}")
 
                     sufix = 'normalizados' if dataset == 'dataset_petroleum_derivatives_normalizados' else 'raw_data'
 
-                    rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = create_time_moe_model(
+                    rrmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = create_time_moe_model(
                         forecast_steps=forecast_steps,
                         time_steps=time_steps,
                         data=data_filtered,
@@ -322,18 +270,18 @@ def run_time_moe(state, derivative, forecast_steps, time_steps, data_filtered, b
                         model=model,
                         norm=norm,
                         learning_rate=learning_rate,
-                        lr_scheduler_type=lr_scheduler_type,
-                        sufix=sufix
+                        # lr_scheduler_type=lr_scheduler_type,
+                        # sufix=sufix
                     )
 
                     # Add results to DataFrame
                     results_df = pd.DataFrame([{
                         'FORECAST_STEPS': forecast_steps,
                         'TIME_FORECAST': time_steps,
-                        'TYPE_PREDICTIONS': type_model + f"_{sufix}_{norm}_{learning_rate}_{lr_scheduler_type}",
+                        'TYPE_PREDICTIONS': type_model,
                         'STATE': state,
                         'PRODUCT': derivative,
-                        'RMSE': rmse_result,
+                        'rrmse': rrmse_result,
                         'MAPE': mape_result,
                         'PBE': pbe_result,
                         'POCID': pocid_result,
@@ -345,14 +293,16 @@ def run_time_moe(state, derivative, forecast_steps, time_steps, data_filtered, b
                 except Exception as e:
                     # Handle any exceptions during model training
                     print(f"An error occurred for derivative '{derivative}' in state '{state}': {e}")
+                    
+                    # 'TYPE_PREDICTIONS': type_model + f"_{sufix}_{norm}_{learning_rate}_{lr_scheduler_type}",
 
                     results_df = pd.DataFrame([{
                         'FORECAST_STEPS': np.nan,
                         'TIME_FORECAST': np.nan,
-                        'TYPE_PREDICTIONS': type_model + f"_{sufix}_{norm}_{learning_rate}_{lr_scheduler_type}",
+                        'TYPE_PREDICTIONS': type_model,
                         'STATE': state,
                         'PRODUCT': derivative,
-                        'RMSE': np.nan,
+                        'rrmse': np.nan,
                         'MAPE': np.nan,
                         'PBE': np.nan,
                         'POCID': np.nan,
@@ -362,11 +312,12 @@ def run_time_moe(state, derivative, forecast_steps, time_steps, data_filtered, b
                     }])
 
                 # Append current results to the combined DataFrame
-                combined_df = pd.concat([combined_df, results_df], ignore_index=True)
+                df_all_results = pd.concat([df_all_results, results_df], ignore_index=True)
 
         else:
+            
             # Run single TimeMoE model training
-            rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = create_time_moe_model(
+            rrmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = create_time_moe_model(
                 forecast_steps=forecast_steps,
                 time_steps=time_steps,
                 data=data_filtered,
@@ -376,13 +327,13 @@ def run_time_moe(state, derivative, forecast_steps, time_steps, data_filtered, b
                 show_plot=True
             )
 
-            results_df = pd.DataFrame([{
+            df_all_results = pd.DataFrame([{
                 'FORECAST_STEPS': forecast_steps,
                 'TIME_FORECAST': time_steps,
                 'TYPE_PREDICTIONS': type_model,
                 'STATE': state,
                 'PRODUCT': derivative,
-                'RMSE': rmse_result,
+                'RRMSE': rrmse_result,
                 'MAPE': mape_result,
                 'PBE': pbe_result,
                 'POCID': pocid_result,
@@ -391,19 +342,17 @@ def run_time_moe(state, derivative, forecast_steps, time_steps, data_filtered, b
                 'ERROR': np.nan
             }])
 
-            combined_df = pd.concat([combined_df, results_df], ignore_index=True)
-
     except Exception as e:
         # Handle exceptions outside of iterations
         print(f"An error occurred for derivative '{derivative}' in state '{state}': {e}")
 
-        results_df = pd.DataFrame([{
+        df_all_results = pd.DataFrame([{
             'FORECAST_STEPS': np.nan,
             'TIME_FORECAST': np.nan,
             'TYPE_PREDICTIONS': type_model,
             'STATE': state,
             'PRODUCT': derivative,
-            'RMSE': np.nan,
+            'RRMSE': np.nan,
             'MAPE': np.nan,
             'PBE': np.nan,
             'POCID': np.nan,
@@ -412,16 +361,21 @@ def run_time_moe(state, derivative, forecast_steps, time_steps, data_filtered, b
             'ERROR': f"An error occurred for derivative '{derivative}' in state '{state}': {e}"
         }])
 
-        combined_df = pd.concat([combined_df, results_df], ignore_index=True)
-
     # Save results to Excel file
     if bool_save:
-        directory = 'results'
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        with log_lock:
+            directory = f'results_model_local'
+            if not os.path.exists(directory):
+                os.makedirs(directory)
 
-        combined_df.to_excel(file_path, index=False)
+            file_path = os.path.join(directory, 'results_time_moe_fine_last_year.xlsx')
+            if os.path.exists(file_path):
+                existing_df = pd.read_excel(file_path)
+            else:
+                existing_df = pd.DataFrame()
 
+            combined_df = pd.concat([existing_df, df_all_results], ignore_index=True)
+            combined_df.to_excel(file_path, index=False)
 
     # Calculate and print the execution time
     end_time = time.time()
@@ -465,7 +419,7 @@ def run_all_in_thread(forecast_steps, time_steps, bool_save, type_model='TimeMoE
             
             thread = multiprocessing.Process(target=run_time_moe, args=(state, derivative, forecast_steps, time_steps, data_filtered, bool_save, log_lock, type_model))
             thread.start()
-            thread.join()  # Wait for the thread to finish execution
+            thread.join()  
 
 def derivative_and_single_thread_testing():    
     """
@@ -480,6 +434,7 @@ def derivative_and_single_thread_testing():
     Returns:
     None
     """
+
     # Setting random seeds for reproducibility
     random.seed(42)
     np.random.seed(42)
@@ -501,12 +456,7 @@ def derivative_and_single_thread_testing():
     start_time = time.time()
 
     # Running the time_moe model
-
-    # rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = \
-    # create_time_moe_model(forecast_steps=12, time_steps=12, data=data_filtered_test, state=state, derivative=derivative,
-    #                 type_model='TimeMoE-200M-FINE-TUNING', show_plot=True)
-
-    rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = create_time_moe_model(
+    rrmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = create_time_moe_model(
                 forecast_steps= 12, 
                 time_steps= 12, 
                 data= data_filtered_test,  

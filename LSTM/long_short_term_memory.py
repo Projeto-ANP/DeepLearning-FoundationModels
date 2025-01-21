@@ -31,8 +31,6 @@ from sklearn.preprocessing import MinMaxScaler
 
 from functions_forecasting import recursive_multistep_forecasting
 
-import pycatch22
-
 warnings.filterwarnings("ignore")
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -60,13 +58,6 @@ def convert_date(date_string):
     year = int(year_month[:4])
     month = int(year_month[4:])
     return pd.Timestamp(year=year, month=month, day=1)
-
-def create_dataset_recursive(data, time_steps=1):
-    X, y = [], []
-    for i in range(len(data) - time_steps):
-        X.append(data[i:(i + time_steps), 0])
-        y.append(data[i + time_steps, 0])
-    return np.array(X), np.array(y)
 
 def create_dataset_direct(data, time_steps=1, forecast_steps=1):
     X, y = [], []
@@ -445,7 +436,7 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
             
     # Save results to an Excel file if specified
     if bool_save:
-        directory = f'result_{time_steps}'
+        directory = f'results_model_local'
         if not os.path.exists(directory):
             os.makedirs(directory)
 

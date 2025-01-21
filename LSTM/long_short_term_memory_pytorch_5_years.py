@@ -23,7 +23,7 @@ from matplotlib import pyplot as plt
 import warnings
 from warnings import simplefilter
 
-from metrics_lstm import rmse, pbe, pocid, mase
+from metrics_lstm import rrmse, pbe, pocid, mase
 from sklearn.metrics import mean_squared_error as mse
 from sklearn.preprocessing import MinMaxScaler
 
@@ -56,13 +56,6 @@ def convert_date(date_string):
     year = int(year_month[:4])
     month = int(year_month[4:])
     return pd.Timestamp(year=year, month=month, day=1)
-
-def create_dataset_recursive(data, time_steps=1):
-    X, y = [], []
-    for i in range(len(data) - time_steps):
-        X.append(data[i:(i + time_steps), 0])
-        y.append(data[i + time_steps, 0])
-    return np.array(X), np.array(y)
 
 def create_dataset_direct(data, time_steps=1, forecast_steps=1):
     X, y = [], []
@@ -140,17 +133,6 @@ def recursive_multistep_forecasting(X_test, model, horizon, device):
         example = torch.cat((example, pred_tensor), dim=1)  # Adiciona a previsão no final
 
     return np.array(preds)
-
-def train_test_stats(data, horizon):
-  train, test = data[:-horizon], data[-horizon:]
-  return train, test
-
-def reverse_diff(last_value_train, preds):    
-    preds_series = pd.Series(preds)
-    preds = pd.concat([last_value_train, preds_series], ignore_index=True)
-    preds_cumsum = preds.cumsum()
-
-    return preds_cumsum[1:].values
 
 def set_seed(seed_value=42):
     # Fixar semente para o Python
@@ -326,14 +308,14 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
 
         # Evaluation metrics
         y_baseline = df[-forecast_steps*2:-forecast_steps].values
-        rmse_result_lstm = rmse(y_test, y_pred)
+        rrmse_result_lstm = rrmse(y_test, y_pred, df[:-12].mean())
         mape_result_lstm = mape(y_test, y_pred)
         pbe_result_lstm = pbe(y_test, y_pred)
         pocid_result_lstm = pocid(y_test, y_pred)
         mase_result_lstm = np.mean(np.abs(y_test - y_pred)) / np.mean(np.abs(y_test - y_baseline))
 
         print("\nResultados LSTM: \n")
-        print(f'RMSE: {rmse_result_lstm}')
+        print(f'RRMSE: {rrmse_result_lstm}')
         print(f'MAPE: {mape_result_lstm}')
         print(f'PBE: {pbe_result_lstm}')
         print(f'POCID: {pocid_result_lstm}')
@@ -380,7 +362,6 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
                                     'TYPE_PREDICTIONS': 'LSTM_PYTORCH_' + type_predictions + '_5_years',
                                     'STATE': state,
                                     'PRODUCT': product,
-                                    'RMSE': np.nan,
                                     'RRMSE': np.nan,
                                     'MAPE': np.nan,
                                     'PBE': np.nan,
@@ -399,7 +380,6 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
                                     'TYPE_PREDICTIONS': 'LSTM_PYTORCH_' + type_predictions + '_5_years',
                                     'STATE': state,
                                     'PRODUCT': product,
-                                    'RMSE': np.nan,
                                     'RRMSE': np.nan,
                                     'MAPE': np.nan,
                                     'PBE': np.nan,
@@ -412,7 +392,7 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
     # Save the results to an Excel file if requested
     if bool_save:
         with log_lock:
-            directory = f'results'
+            directory = f'results_model_local'
             if not os.path.exists(directory):
                 os.makedirs(directory)
 

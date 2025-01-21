@@ -1,18 +1,34 @@
+# Code Description:
+# This code contains several functions to calculate different error metrics
+# used to evaluate the performance of forecasting models. The metrics calculated
+# include:
+# - RRMSE (Relative Root Mean Squared Error)
+# - PBE (Percentage Bias Error)
+# - POCID (Percentage of Correctly Identified Direction)
+# - MASE (Mean Absolute Scaled Error)
+# These functions take true and predicted values as inputs and return the respective error metric.
+
 import numpy as np
 from sklearn.metrics import mean_squared_error as mse
 
-def rmse(y_true, y_pred):
+def rrmse(y_true, y_pred, mean_y_true_serie_completa):
     """
-    Calculate Root Mean Squared Error (RMSE).
+    Calculate Relative Root Mean Squared Error (RRMSE).
 
     Parameters:
     - y_true: array-like, true values
     - y_pred: array-like, predicted values
+    - mean_y_true_serie_completa: float, mean value of the true series
 
     Returns:
-    - float, RMSE value
+    - float, RRMSE value
     """
-    return np.sqrt(mse(y_true, y_pred))
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    rmse = np.sqrt(np.mean((y_true - y_pred) ** 2))
+    rrmse_value = rmse / mean_y_true_serie_completa
+ 
+    return rrmse_value
 
 def pbe(y_true, y_pred):
     """
@@ -43,8 +59,6 @@ def pocid(y_true, y_pred):
     POCID = 100 * np.sum(D) / (n-1)
 
     return POCID
-
- 
 
 def mase(y_true, y_pred, y_baseline):
     """

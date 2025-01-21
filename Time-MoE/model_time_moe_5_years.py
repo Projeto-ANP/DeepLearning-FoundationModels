@@ -23,7 +23,7 @@ from matplotlib import pyplot as plt
 import warnings
 from warnings import simplefilter
 
-from metrics_time_moe import rmse, pbe, pocid, mase # type: ignore
+from metrics_time_moe import pbe, pocid, mase # type: ignore
 from sklearn.metrics import mean_squared_error as mse
 from sklearn.preprocessing import MinMaxScaler
 
@@ -55,84 +55,6 @@ def convert_date(date_string):
     month = int(year_month[4:])
     return pd.Timestamp(year=year, month=month, day=1)
 
-def create_dataset_recursive(data, time_steps=1):
-    X, y = [], []
-    for i in range(len(data) - time_steps):
-        X.append(data[i:(i + time_steps), 0])
-        y.append(data[i + time_steps, 0])
-    return np.array(X), np.array(y)
-
-def create_dataset_direct(data, time_steps=1, forecast_steps=1):
-    X, y = [], []
-    for i in range(len(data) - time_steps - forecast_steps + 1):
-        X.append(data[i:(i + time_steps), 0])
-        y.append(data[i + time_steps:i + time_steps + forecast_steps, 0])
-    return np.array(X), np.array(y)
-
-def rolling_window(series, window):
-    """
-    Generate rolling window data for time series analysis.
-
-    Parameters:
-    - series: array-like, time series data
-    - window: int, size of the rolling window
-
-    Returns:
-    - df: pandas DataFrame, containing the rolling window data
-    - scaler: MinMaxScaler object, used for normalization
-    """
-    data = []
-   
-    for i in range(len(series) - window):
-        example = np.array(series[i:i + window + 1])
-        data.append(example)
-
-    df = pd.DataFrame(data)
-    df = df.dropna()
-    return df
-
-def train_test_split_cisia(data, horizon):
-    
-    X = data.iloc[:,:-1] # features
-    y = data.iloc[:,-1] # target
-
-    X_train = X[:-horizon] # features train
-    X_test =  X[-horizon:] # features test
-
-    y_train = y[:-horizon] # target train
-    y_test = y[-horizon:] # target test
-
-    return X_train, X_test, y_train, y_test
-
-def recursive_multistep_forecasting(X_test, model, horizon):
-  # example é composto pelas últimas observações vistas
-  # na prática, é o primeiro exemplo do conjunto de teste
-  example = X_test[0].reshape(1,-1)
-
-  preds = []
-  for i in range(horizon):
-    pred = model.predict(example)[0]
-    preds.append(pred)
-
-    # Descartar o valor da primeira posição do vetor de características
-    example = example[:,1:]
-
-    # Adicionar o valor predito na última posição do vetor de características
-    example = np.append(example, pred)
-    example = example.reshape(1,-1)
-  return preds
-
-def train_test_stats(data, horizon):
-  train, test = data[:-horizon], data[-horizon:]
-  return train, test
-
-def reverse_diff(last_value_train, preds):    
-    preds_series = pd.Series(preds)
-    preds = pd.concat([last_value_train, preds_series], ignore_index=True)
-    preds_cumsum = preds.cumsum()
-
-    return preds_cumsum[1:].values
-
 def get_scaled_data(df, len_data=None):
     df = df[:-12]
     
@@ -161,7 +83,6 @@ def create_time_moe_model(forecast_steps, time_steps, data, state, product, type
     - show_plot (bool or None, optional): Whether to display a plot of the forecasted values. Default is None.
 
     """
-
     y_preds_5_years = []
 
     data['timestamp'] = pd.to_datetime(data['timestamp'], errors='coerce')
@@ -173,7 +94,10 @@ def create_time_moe_model(forecast_steps, time_steps, data, state, product, type
 
         df = data[data['timestamp'] <= start_date]
         print(f'\nData filtered for {start_date.date()}\n')
+        print(df)
         df = df['m3']
+
+        print(f"Ano atual: {(start_date.date()).year}")
    
         len_data = None
         df_scaled, scaler = get_scaled_data(df, len_data)
@@ -182,79 +106,60 @@ def create_time_moe_model(forecast_steps, time_steps, data, state, product, type
 
         tensor = tensor.squeeze(-1).unsqueeze(0)
 
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        tensor = tensor.to(device)
+
         ''' 
         # INFO: ZERO SHOT
         ''' 
         if type_model == "TimeMoE-50M_ZERO_SHOT":
             model = AutoModelForCausalLM.from_pretrained(
                 'Maple728/TimeMoE-50M',
-                device_map="cpu",  
+                device_map="cuda",  
                 trust_remote_code=True,
             )
         elif type_model == "TimeMoE-200M_ZERO_SHOT":
             model = AutoModelForCausalLM.from_pretrained(
                 'Maple728/TimeMoE-200M',
-                device_map="cpu",  
-                trust_remote_code=True,
-            )
-
-        # INFO: FINE-TUNING
-        elif type_model == "TimeMoE-50M-FINE-TUNING":
-            model = TimeMoeForPrediction.from_pretrained(
-                "../Time-MoE/fine_tuning_50_10_epochs_normalizados/time_moe",
-                device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
-                trust_remote_code=True,
-            )
-        elif type_model == "TimeMoE-200M-FINE-TUNING":
-            model = TimeMoeForPrediction.from_pretrained(
-                "../Time-MoE/fine_tuning_200_10_epochs_normalizados/time_moe",
-                device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
+                device_map="cuda",  
                 trust_remote_code=True,
             )
         
-        # INFO: FINE-TUNING DIRECT
-        elif type_model == "TimeMoE-50M-FINE-TUNING-DIRECT-1":
+        ''' 
+        # INFO: FINE TUNING GLOBAL
+        ''' 
+        elif type_model == "TimeMoE-50M_FINE_TUNING_GLOBAL":
+            model_path = f"models_fine_tuning_global_artigo_5_anos/model_50M/fine_tuning_50M_{(start_date.date()).year}_10_epochs_1e-06/time_moe"
             model = TimeMoeForPrediction.from_pretrained(
-                "../Time-MoE/fine_tuning_50_1_epochs_normalizados/time_moe",
-                device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
-                trust_remote_code=True,
-            )
-        elif type_model == "TimeMoE-50M-FINE-TUNING-DIRECT-5":
-            model = TimeMoeForPrediction.from_pretrained(
-                "../Time-MoE/fine_tuning_50_5_rolling_window_direct/time_moe",
-                device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
-                trust_remote_code=True,
-            )
-        elif type_model == "TimeMoE-50M-FINE-TUNING-DIRECT-10":
-            model = TimeMoeForPrediction.from_pretrained(
-                "../Time-MoE/fine_tuning_50_10_rolling_window_direct/time_moe",
-                device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
-                trust_remote_code=True,
-            )
-        elif type_model == "TimeMoE-200M-FINE-TUNING-DIRECT-1":
-            model = TimeMoeForPrediction.from_pretrained(
-                "../Time-MoE/fine_tuning_200_1_rolling_window_direct/time_moe",
-                device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
-                trust_remote_code=True,
-            )
-        elif type_model == "TimeMoE-200M-FINE-TUNING-DIRECT-5":
-            model = TimeMoeForPrediction.from_pretrained(
-                "../Time-MoE/fine_tuning_200_5_rolling_window_direct/time_moe",
-                device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
-                trust_remote_code=True,
-            )
-        elif type_model == "TimeMoE-200M-FINE-TUNING-DIRECT-10":
-            model = TimeMoeForPrediction.from_pretrained(
-                "../Time-MoE/fine_tuning_200_10_rolling_window_direct/time_moe",
-                device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
+                model_path,
+                device_map="cuda", 
                 trust_remote_code=True,
             )
 
-        # INFO: TESTE
-        elif type_model == "TESTE":
+        elif type_model == "TimeMoE-200M_FINE_TUNING_GLOBAL":
+            model_path = f"models_fine_tuning_global_artigo_5_anos/model_200M/fine_tuning_200M_{(start_date.date()).year}_10_epochs_1e-06/time_moe"
             model = TimeMoeForPrediction.from_pretrained(
-                "../Time-MoE/teste_time_moe_fine_tuning/time_moe",
-                device_map="cpu",  # Use "cpu" for CPU inference, and "cuda" for GPU inference.
+                model_path,
+                device_map="cuda", 
+                trust_remote_code=True,
+            )
+        
+        ''' 
+        # INFO: FINE TUNING INDIVIDUAL
+        ''' 
+        elif type_model == "TimeMoE-50M_FINE_TUNING_INDIV":
+            model_path = f"models_fine_tuning_individual_artigo_5_anos/model_50M/fine_tuning_50M_{(start_date.date()).year}_{state}_{product}_10_epochs_1e-06/time_moe"
+            model = TimeMoeForPrediction.from_pretrained(
+                model_path,
+                device_map="cuda", 
+                trust_remote_code=True,
+            )
+
+        elif type_model == "TimeMoE-200M_FINE_TUNING_INDIV":
+            model_path = f"models_fine_tuning_individual_artigo_5_anos/model_200M/fine_tuning_200M_{(start_date.date()).year}_{state}_{product}_10_epochs_1e-06/time_moe"
+            model = TimeMoeForPrediction.from_pretrained(
+                model_path,
+                device_map="cuda", 
                 trust_remote_code=True,
             )
 
@@ -262,14 +167,18 @@ def create_time_moe_model(forecast_steps, time_steps, data, state, product, type
         else:
             model = AutoModelForCausalLM.from_pretrained(
                 'Maple728/TimeMoE-1.1B',
-                device_map="cpu",  # use "cpu" for CPU inference, and "cuda" for GPU inference.
+                device_map="cuda",  
                 trust_remote_code=True,
             )
+        
+        model.to(device)
 
         # forecast
         prediction_length = 12
         output = model.generate(tensor, max_new_tokens=prediction_length)  
         forecast = output[:, -prediction_length:]  
+
+        forecast = forecast.cpu().numpy() 
     
         gc.collect() 
 
@@ -280,20 +189,19 @@ def create_time_moe_model(forecast_steps, time_steps, data, state, product, type
 
         # Calculating evaluation metrics
         y_baseline = df[-forecast_steps*2:-forecast_steps].values
-        rmse_result_time_moe = rmse(y_test, y_pred)
         mape_result_time_moe = mape(y_test, y_pred)
         pbe_result_time_moe = pbe(y_test, y_pred)
         pocid_result_time_moe = pocid(y_test, y_pred)
         mase_result_time_moe = np.mean(np.abs(y_test - y_pred)) / np.mean(np.abs(y_test - y_baseline))
 
         print("\nResultados Time-MOE: \n")
-        print(f'RMSE: {rmse_result_time_moe}')
         print(f'MAPE: {mape_result_time_moe}')
         print(f'PBE: {pbe_result_time_moe}')
         print(f'POCID: {pocid_result_time_moe}')
         print(f'MASE: {mase_result_time_moe}')
       
         y_preds_5_years.append(y_pred)
+        break
     return np.concatenate(y_preds_5_years).tolist()
                     
 def run_time_moe_5_years(state, product, forecast_steps, time_steps, data_filtered, bool_save, log_lock, type_model='TimeMoE-50M'):
@@ -347,7 +255,7 @@ def run_time_moe_5_years(state, product, forecast_steps, time_steps, data_filter
             
     # Save results to an Excel file if specified
     if bool_save:
-        directory = f'results'
+        directory = f'results_model_local'
         if not os.path.exists(directory):
             os.makedirs(directory)
 
@@ -359,6 +267,7 @@ def run_time_moe_5_years(state, product, forecast_steps, time_steps, data_filter
 
         combined_df = pd.concat([existing_df, results_df], ignore_index=True)
         combined_df.to_excel(file_path, index=False)
+
 
     # Calculate and print the execution time
     end_time = time.time()
