@@ -1,5 +1,5 @@
 import sys
-from n_beats_5_years import run_nbeats_in_thread
+from n_beats_5_years5 import run_nbeats_in_thread
 
 def main(forecast_steps, time_steps, bool_save):
     run_nbeats_in_thread(forecast_steps=forecast_steps, time_steps=time_steps, bool_save=bool_save)

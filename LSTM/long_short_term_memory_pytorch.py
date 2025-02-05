@@ -214,12 +214,6 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
     y_val = torch.tensor(y_val, dtype=torch.float32)
     X_test = torch.tensor(X_test, dtype=torch.float32).unsqueeze(-1)
 
-    
-    # print("X_train_val shape:", X_train_val.shape)
-    # print("y_train_val shape:", y_train_val.shape)
-    # print("X_train_val:", X_train_val)
-    # print("y_train_val:", y_train_val)
-
     # Define LSTM model
     class LSTMModel(nn.Module):
         def __init__(self, input_size, hidden_size, num_layers, dropout=0.2):
@@ -246,13 +240,75 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
 
     # Set device and initialize model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # INFO: First experiment
+    # set_seed(42)
+    # input_size = 1
+    # num_layers = 3
+    # epochs = 100
+    # hidden_size = 128
+    # output_size = int_dense
+    # dropout = 0.15
+    # model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
+    # loss_fn = nn.MSELoss()
+    # optimizer = optim.Adam(model.parameters(), lr=0.01)
+
+    # INFO: Second experiment
+    # set_seed(42)
+    # input_size = 1
+    # num_layers = 4
+    # epochs = 100
+    # hidden_size = 64
+    # output_size = int_dense
+    # dropout = 0.1
+    # model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
+    # loss_fn = nn.SmoothL1Loss()
+    # optimizer = optim.Adam(model.parameters(), lr=0.005)
+
+    # INFO: Third experiment
+    # set_seed(42)
+    # input_size = 1
+    # num_layers = 2
+    # epochs = 50
+    # hidden_size = 256
+    # output_size = int_dense
+    # dropout = 0.2
+    # model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
+    # loss_fn = nn.MSELoss()
+    # optimizer = optim.AdamW(model.parameters(), lr=5e-5)
+
+    # INFO: Fourth experiment
+    # set_seed(42)
+    # input_size = 1
+    # num_layers = 2
+    # epochs = 75
+    # hidden_size = 32
+    # output_size = int_dense
+    # dropout = 0.05
+    # model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
+    # loss_fn = nn.SmoothL1Loss()
+    # optimizer = optim.RMSprop(model.parameters(), lr=1e-4)
+
+    # INFO: Fifth experiment
+    # set_seed(42)
+    # input_size = 1
+    # num_layers = 1
+    # epochs = 120
+    # hidden_size = 64
+    # output_size = int_dense
+    # dropout = 0.1
+    # model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
+    # loss_fn = nn.HuberLoss()
+    # optimizer = optim.Adam(model.parameters(), lr=2e-5)
+
+    # INFO: Sixth  experiment
     set_seed(42)
     input_size = 1
     num_layers = 3
-    hidden_size = 128
+    epochs = 100
+    hidden_size = 32
     output_size = int_dense
     dropout = 0.15
-
     model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
     loss_fn = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.01)
@@ -346,7 +402,7 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
         # Create a DataFrame to store the results
         results_df = pd.DataFrame([{'FORECAST_STEPS': forecast_steps,
                                     'TIME_FORECAST': time_steps,
-                                    'TYPE_PREDICTIONS': 'LSTM_PYTORCH_' + type_predictions,
+                                    'TYPE_PREDICTIONS': 'LSTM6_PYTORCH_' + type_predictions,
                                     'STATE': state,
                                     'PRODUCT': product,
                                     'RRMSE': rrmse_result,
@@ -363,7 +419,7 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
         
         results_df = pd.DataFrame([{'FORECAST_STEPS': np.nan,
                                     'TIME_FORECAST': np.nan,
-                                    'TYPE_PREDICTIONS': 'LSTM_PYTORCH_' + type_predictions,
+                                    'TYPE_PREDICTIONS': 'LSTM6_PYTORCH_' + type_predictions,
                                     'STATE': state,
                                     'PRODUCT': product,
                                     'RRMSE': np.nan,
@@ -382,7 +438,7 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
             if not os.path.exists(directory):
                 os.makedirs(directory)
 
-            file_path = os.path.join(directory, 'lstm_results_pytorch.xlsx')
+            file_path = os.path.join(directory, 'lstm_results6_pytorch.xlsx')
             if os.path.exists(file_path):
                 existing_df = pd.read_excel(file_path)
             else:

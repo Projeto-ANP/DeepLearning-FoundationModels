@@ -20,6 +20,7 @@ if __name__ == "__main__":
         # Define the parameters for each loop_lstm call
         
         # lstm_params = [
+        #     # (12, 12, 100, True, 16, 'direct'),
         #     (12, 12, 100, True, 16, 'recursive'),
         # ]
         
@@ -54,8 +55,29 @@ if __name__ == "__main__":
         # Define the parameters for each loop_lstm call
         
         lstm_params = [
-            (12, 12, 100, True, 16, 'recursive'),
-            # (12, 12, 100, True, 16, 'direct')
+            (12, 12, 100, True, 16, 'direct'),
+            # (12, 12, 100, True, 16, 'recursive'),            
+        ]
+        
+        processes = []
+        
+        # Start a new process for each set of parameters
+        for params in lstm_params:
+            cmd = [
+                "python", "run_lstm_script_pytorch_5_years.py",
+                str(params[0]), str(params[1]), str(params[2]),
+                str(params[3]), str(params[4]), str(params[5]),
+            ]
+            p = subprocess.Popen(cmd)
+            processes.append(p)
+        
+        # Wait for all processes to complete
+        for p in processes:
+            p.wait()
+    
+        lstm_params = [
+            # (12, 12, 100, True, 16, 'direct'),
+            (12, 12, 100, True, 16, 'recursive'),            
         ]
         
         processes = []

@@ -17,8 +17,8 @@ NOTE: Uncomment and comment out the code below as needed.
 
 import subprocess
 import multiprocessing
-from model_time_moe_5_years import product_and_single_thread_testing_5_years
-from model_time_moe import product_and_single_thread_testing
+# from model_time_moe_5_years import product_and_single_thread_testing_5_years
+from model_time_moe import derivative_and_single_thread_testing
 
 
 if __name__ == "__main__":
@@ -29,30 +29,32 @@ if __name__ == "__main__":
         ''' 
         
         # multiprocessing.set_start_method("spawn")
-        # thread = multiprocessing.Process(target=product_and_single_thread_testing)
+        # thread = multiprocessing.Process(target=derivative_and_single_thread_testing)
         # thread.start()
         # thread.join()
 
         ''' 
         # INFO: ALL STATES TimeMoE-50M/TimeMoE-200M (Testing model for all states)
-        # INFO: (input variables) forecast_steps, time_steps, bool_save, type_model 
-        ''' 
         
-        # time_moe_params = [
-        #     (12, 12, True, 'TimeMoE-50M-FINE-TUNING'),
-        #     (12, 12, True, 'TimeMoE-200M-FINE-TUNING'),
-        # ]
+        'TimeMoE-50M_ZERO_SHOT'
+        'TimeMoE-200M_ZERO_SHOT'
+        'TimeMoE-50M_FINE_TUNING_INDIV'
+        'TimeMoE-50M_FINE_TUNING_GLOBAL'
+        'TimeMoE-200M_FINE_TUNING_INDIV'
+        'TimeMoE-200M_FINE_TUNING_GLOBAL'
+
+        ''' 
+
+        # model = "TimeMoE-50M-FINE-TUNING"
         
         # processes = []
         
-        # for params in time_moe_params:
-        #     cmd = [
-        #         "python", "run_all_time_moe_script.py",
-        #         str(params[0]), str(params[1]), str(params[2]),
-        #         str(params[3]),
-        #     ]
-        #     p = subprocess.Popen(cmd)
-        #     processes.append(p)
+        # cmd = [
+        #     "python", "run_all_time_moe_script.py",
+        #     model,
+        # ]
+        # p = subprocess.Popen(cmd)
+        # processes.append(p)
         
         # for p in processes:
         #     p.wait()
@@ -69,24 +71,41 @@ if __name__ == "__main__":
 
         ''' 
         # INFO: ALL STATES TimeMoE-50M/TimeMoE-200M 5 YEARS (Testing model for all states over 5 years)
-        # INFO: (input variables) forecast_steps, time_steps, bool_save, type_model 
+        
+        'TimeMoE-50M_ZERO_SHOT'
+        'TimeMoE-200M_ZERO_SHOT'
+        'TimeMoE-50M-FINE-TUNING-INDIV'
+        'TimeMoE-50M-FINE-TUNING-GLOBAL'
+        'TimeMoE-200M-FINE-TUNING-INDIV
+        'TimeMoE-200M-FINE-TUNING-GLOBAL'
+        "TimeMoE-50M-FINE-TUNING-PRODUCT"
+        "TimeMoE-200M-FINE-TUNING-PRODUCT"
+        
         ''' 
+        processes = []
 
-        time_moe_params = [
-            (12, 12, True, 'TimeMoE-50M_FINE_TUNING_GLOBAL'),
-            (12, 12, True, 'TimeMoE-200M_FINE_TUNING_INDIV'),
+        model = 'TimeMoE-50M-FINE-TUNING-PRODUCT'
+        
+        cmd = [
+            "python", "run_all_time_moe_script_5_years.py",
+            model,
         ]
+        p = subprocess.Popen(cmd)
+        processes.append(p)
+        
+        for p in processes:
+            p.wait()
         
         processes = []
+
+        model = 'TimeMoE-200M-FINE-TUNING-PRODUCT'
         
-        for params in time_moe_params:
-            cmd = [
-                "python", "run_all_time_moe_script_5_years.py",
-                str(params[0]), str(params[1]), str(params[2]),
-                str(params[3]),
-            ]
-            p = subprocess.Popen(cmd)
-            processes.append(p)
+        cmd = [
+            "python", "run_all_time_moe_script_5_years.py",
+            model,
+        ]
+        p = subprocess.Popen(cmd)
+        processes.append(p)
         
         for p in processes:
             p.wait()

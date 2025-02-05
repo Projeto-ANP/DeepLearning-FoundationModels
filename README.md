@@ -9,7 +9,8 @@ This repository gathers the codes and results from experiments conducted using v
 - **LSTM (Long Short-Term Memory)**  
 - **N-BEATS (Neural Basis Expansion Analysis Time Series)**  
 - **Time-MoE (Time Mixture of Experts)**  
-- **LagLlama**  
+- **Morai-MoE**  
+- **TimesFM**  
 
 Each model is organized in its own directory, with specific and well-documented codes to ensure easy navigation and understanding by users.  
 

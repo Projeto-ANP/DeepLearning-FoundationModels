@@ -79,15 +79,86 @@ def create_nbeats_model(forecast_steps, time_steps, data):
 
         series = TimeSeries.from_values(df_scaled)
 
+        # INFO: First experiment
+        # model = NBEATSModel(
+        #     input_chunk_length=12,
+        #     output_chunk_length=1,
+        #     n_epochs=50,
+        #     batch_size=16,
+        #     random_state=42,
+        #     activation='LeakyReLU',
+        #     pl_trainer_kwargs={"accelerator": "gpu", "devices": 1}
+        # )
+
+        # INFO: Second experiment
+        # model = NBEATSModel(
+        #     input_chunk_length=12,
+        #     output_chunk_length=1,
+        #     n_epochs=100,
+        #     batch_size=32,
+        #     random_state=42,
+        #     activation='PReLU',
+        #     pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
+        #     num_blocks=2,
+        #     num_layers=3,
+        #     layer_widths=128
+        # )
+
+        # INFO: Third experiment
+        # model = NBEATSModel(
+        #     input_chunk_length=12,
+        #     output_chunk_length=1,
+        #     n_epochs=30,
+        #     batch_size=16,
+        #     random_state=42,
+        #     activation='ReLU',
+        #     pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
+        #     num_blocks=3,
+        #     num_layers=4,
+        #     layer_widths=64
+        # )
+
+        # INFO: Fourth experiment
+        # model = NBEATSModel(
+        #     input_chunk_length=12,
+        #     output_chunk_length=1,
+        #     n_epochs=20,
+        #     batch_size=64,
+        #     random_state=42,
+        #     activation='ReLU',
+        #     pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
+        #     num_blocks=4,
+        #     num_layers=5,
+        #     layer_widths=32
+        # )
+
+        # INFO: Fifth experiment
+        # model = NBEATSModel(
+        #     input_chunk_length=12,
+        #     output_chunk_length=1,
+        #     n_epochs=75,
+        #     batch_size=16,
+        #     random_state=42,
+        #     activation='ReLU',
+        #     pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
+        #     num_blocks=3,
+        #     num_layers=2,
+        #     layer_widths=256
+        # )
+
+        # INFO: Sixth  experiment
         model = NBEATSModel(
             input_chunk_length=12,
             output_chunk_length=1,
-            n_epochs=50,
+            n_epochs=120,
             batch_size=16,
             random_state=42,
-            activation='LeakyReLU',
-            pl_trainer_kwargs={"accelerator": "gpu", "devices": 1}
+            activation='ReLU',
+            pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
+            num_blocks=2,
+            num_layers=3,
         )
+
 
         model.fit(series)
 
@@ -146,7 +217,7 @@ def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_s
         # Create a DataFrame to store the results
         results_df = pd.DataFrame([{'FORECAST_STEPS': forecast_steps,
                                     'TIME_FORECAST': time_steps,
-                                    'TYPE_PREDICTIONS': 'N-BEATS',
+                                    'TYPE_PREDICTIONS': 'N-BEATS6',
                                     'STATE': state,
                                     'PRODUCT': product,
                                     'RRMSE': np.nan,
@@ -163,7 +234,7 @@ def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_s
         
         results_df = pd.DataFrame([{'FORECAST_STEPS': np.nan,
                                     'TIME_FORECAST': np.nan,
-                                    'TYPE_PREDICTIONS': 'N-BEATS',
+                                    'TYPE_PREDICTIONS': 'N-BEATS6',
                                     'STATE': state,
                                     'PRODUCT': product,
                                     'RRMSE': np.nan,
@@ -181,7 +252,7 @@ def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_s
             if not os.path.exists(directory):
                 os.makedirs(directory)
 
-            file_path = os.path.join(directory, 'nbeats_results_5_years.xlsx')
+            file_path = os.path.join(directory, 'nbeats_results6_5_years.xlsx')
             if os.path.exists(file_path):
                 existing_df = pd.read_excel(file_path)
             else:
