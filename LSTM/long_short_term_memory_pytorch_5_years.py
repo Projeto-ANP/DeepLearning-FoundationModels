@@ -174,6 +174,7 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
 
     y_preds_5_years = []
 
+
     data['timestamp'] = pd.to_datetime(data['timestamp'], errors='coerce')
 
     end_date = data['timestamp'].max()

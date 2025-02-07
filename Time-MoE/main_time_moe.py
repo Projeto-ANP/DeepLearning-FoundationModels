@@ -15,10 +15,10 @@ NOTE: Uncomment and comment out the code below as needed.
 
 '''
 
-import subprocess
-import multiprocessing
-# from model_time_moe_5_years import product_and_single_thread_testing_5_years
-from model_time_moe import derivative_and_single_thread_testing
+
+from model_time_moe import derivative_and_single_thread_testing, run_all_in_thread
+from model_time_moe_5_years import product_and_single_thread_testing_5_years, run_all_in_thread_5_years
+
 
 
 if __name__ == "__main__":
@@ -28,45 +28,29 @@ if __name__ == "__main__":
         # INFO: SINGLE STATE (Testing model for a single state)
         ''' 
         
-        # multiprocessing.set_start_method("spawn")
-        # thread = multiprocessing.Process(target=derivative_and_single_thread_testing)
-        # thread.start()
-        # thread.join()
+        # derivative_and_single_thread_testing()
 
         ''' 
         # INFO: ALL STATES TimeMoE-50M/TimeMoE-200M (Testing model for all states)
         
         'TimeMoE-50M_ZERO_SHOT'
         'TimeMoE-200M_ZERO_SHOT'
-        'TimeMoE-50M_FINE_TUNING_INDIV'
-        'TimeMoE-50M_FINE_TUNING_GLOBAL'
-        'TimeMoE-200M_FINE_TUNING_INDIV'
-        'TimeMoE-200M_FINE_TUNING_GLOBAL'
+        'TimeMoE-50M-FINE-TUNING-INDIV'
+        'TimeMoE-50M-FINE-TUNING-GLOBAL'
+        'TimeMoE-200M-FINE-TUNING-INDIV
+        'TimeMoE-200M-FINE-TUNING-GLOBAL'
+        'TimeMoE-50M-FINE-TUNING-PRODUCT'
+        'TimeMoE-200M-FINE-TUNING-PRODUCT'
 
         ''' 
 
-        # model = "TimeMoE-50M-FINE-TUNING"
-        
-        # processes = []
-        
-        # cmd = [
-        #     "python", "run_all_time_moe_script.py",
-        #     model,
-        # ]
-        # p = subprocess.Popen(cmd)
-        # processes.append(p)
-        
-        # for p in processes:
-        #     p.wait()
+        # run_all_in_thread(type_model='TimeMoE-50M_ZERO_SHOT')
         
         ''' 
         # INFO: SINGLE STATE 5 YEARS (Testing model for a single state over 5 years)
         ''' 
         
-        # multiprocessing.set_start_method("spawn")
-        # thread = multiprocessing.Process(target=product_and_single_thread_testing_5_years)
-        # thread.start()
-        # thread.join()
+        # product_and_single_thread_testing_5_years()
 
 
         ''' 
@@ -78,37 +62,13 @@ if __name__ == "__main__":
         'TimeMoE-50M-FINE-TUNING-GLOBAL'
         'TimeMoE-200M-FINE-TUNING-INDIV
         'TimeMoE-200M-FINE-TUNING-GLOBAL'
-        "TimeMoE-50M-FINE-TUNING-PRODUCT"
-        "TimeMoE-200M-FINE-TUNING-PRODUCT"
+        'TimeMoE-50M-FINE-TUNING-PRODUCT'
+        'TimeMoE-200M-FINE-TUNING-PRODUCT'
         
         ''' 
-        processes = []
 
-        model = 'TimeMoE-50M-FINE-TUNING-PRODUCT'
+        run_all_in_thread_5_years(type_model='TimeMoE-50M_ZERO_SHOT')
         
-        cmd = [
-            "python", "run_all_time_moe_script_5_years.py",
-            model,
-        ]
-        p = subprocess.Popen(cmd)
-        processes.append(p)
-        
-        for p in processes:
-            p.wait()
-        
-        processes = []
-
-        model = 'TimeMoE-200M-FINE-TUNING-PRODUCT'
-        
-        cmd = [
-            "python", "run_all_time_moe_script_5_years.py",
-            model,
-        ]
-        p = subprocess.Popen(cmd)
-        processes.append(p)
-        
-        for p in processes:
-            p.wait()
 
     except Exception as e:
         print("An error occurred:", e)

@@ -6,8 +6,7 @@ NOTE: Uncomment and comment out the code below as needed.
 
 '''
 
-import subprocess
-from morai_moe_code_forecasting import product_and_single_thread_testing
+from morai_moe_code_forecasting import product_and_single_thread_testing, run_all_in_thread
 
 if __name__ == "__main__":
     try:
@@ -24,20 +23,7 @@ if __name__ == "__main__":
         model: small or base
         
         ''' 
-        
-        processes = []
-
-        model = "small"
-        
-        cmd = [
-            "python", "run_all_morai_moe_script_5_years.py",
-            model,
-        ]
-        p = subprocess.Popen(cmd)
-        processes.append(p)
-        
-        for p in processes:
-            p.wait()
+        run_all_in_thread(type_model='small')
 
     except Exception as e:
         print("An error occurred:", e)

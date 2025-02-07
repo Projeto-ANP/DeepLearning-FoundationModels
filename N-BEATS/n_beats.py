@@ -48,11 +48,8 @@ def convert_date(date_string):
     month = int(year_month[4:])
     return pd.Timestamp(year=year, month=month, day=1)
 
-def get_scaled_data(df, len_data=None):
+def get_scaled_data(df):
     df = df[:-12]
-    
-    if len_data is not None:
-        df = df[-len_data:]
     
     # MinMaxScaler
     scaler = MinMaxScaler(feature_range=(-1, 1))
@@ -60,93 +57,99 @@ def get_scaled_data(df, len_data=None):
 
     return df_scaled, scaler
 
-def create_nbeats_model(forecast_steps, time_steps, data):
+def create_nbeats_model(type_experiment, data):
    
     df = data['m3']
     
-    df_scaled, scaler = get_scaled_data(df, None)
+    df_scaled, scaler = get_scaled_data(df)
 
     series = TimeSeries.from_values(df_scaled)
 
     # INFO: First experiment
-    # model = NBEATSModel(
-    #     input_chunk_length=12,
-    #     output_chunk_length=1,
-    #     n_epochs=50,
-    #     batch_size=16,
-    #     random_state=42,
-    #     activation='LeakyReLU',
-    #     pl_trainer_kwargs={"accelerator": "gpu", "devices": 1}
-    # )
+    if type_experiment == 1:
+        model = NBEATSModel(
+            input_chunk_length=12,
+            output_chunk_length=1,
+            n_epochs=50,
+            batch_size=16,
+            random_state=42,
+            activation='LeakyReLU',
+            pl_trainer_kwargs={"accelerator": "gpu", "devices": 1}
+        )
 
     # INFO: Second experiment
-    # model = NBEATSModel(
-    #     input_chunk_length=12,
-    #     output_chunk_length=1,
-    #     n_epochs=100,
-    #     batch_size=32,
-    #     random_state=42,
-    #     activation='PReLU',
-    #     pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
-    #     num_blocks=2,
-    #     num_layers=3,
-    #     layer_widths=128
-    # )
+    elif type_experiment == 2:
+        model = NBEATSModel(
+            input_chunk_length=12,
+            output_chunk_length=1,
+            n_epochs=100,
+            batch_size=32,
+            random_state=42,
+            activation='PReLU',
+            pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
+            num_blocks=2,
+            num_layers=3,
+            layer_widths=128
+        )
 
     # INFO: Third experiment
-    # model = NBEATSModel(
-    #     input_chunk_length=12,
-    #     output_chunk_length=1,
-    #     n_epochs=30,
-    #     batch_size=16,
-    #     random_state=42,
-    #     activation='ReLU',
-    #     pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
-    #     num_blocks=3,
-    #     num_layers=4,
-    #     layer_widths=64
-    # )
+    elif type_experiment == 3:
+        model = NBEATSModel(
+            input_chunk_length=12,
+            output_chunk_length=1,
+            n_epochs=30,
+            batch_size=16,
+            random_state=42,
+            activation='ReLU',
+            pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
+            num_blocks=3,
+            num_layers=4,
+            layer_widths=64
+        )
 
     # INFO: Fourth experiment
-    # model = NBEATSModel(
-    #     input_chunk_length=12,
-    #     output_chunk_length=1,
-    #     n_epochs=20,
-    #     batch_size=64,
-    #     random_state=42,
-    #     activation='ReLU',
-    #     pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
-    #     num_blocks=4,
-    #     num_layers=5,
-    #     layer_widths=32
-    # )
+    elif type_experiment == 4:
+        model = NBEATSModel(
+            input_chunk_length=12,
+            output_chunk_length=1,
+            n_epochs=20,
+            batch_size=64,
+            random_state=42,
+            activation='ReLU',
+            pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
+            num_blocks=4,
+            num_layers=5,
+            layer_widths=32
+        )
 
     # INFO: Fifth experiment
-    # model = NBEATSModel(
-    #     input_chunk_length=12,
-    #     output_chunk_length=1,
-    #     n_epochs=75,
-    #     batch_size=16,
-    #     random_state=42,
-    #     activation='ReLU',
-    #     pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
-    #     num_blocks=3,
-    #     num_layers=2,
-    #     layer_widths=256
-    # )
+    elif type_experiment == 5:
+        model = NBEATSModel(
+            input_chunk_length=12,
+            output_chunk_length=1,
+            n_epochs=75,
+            batch_size=16,
+            random_state=42,
+            activation='ReLU',
+            pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
+            num_blocks=3,
+            num_layers=2,
+            layer_widths=256
+        )
 
     # INFO: Sixth  experiment
-    model = NBEATSModel(
-        input_chunk_length=12,
-        output_chunk_length=1,
-        n_epochs=120,
-        batch_size=16,
-        random_state=42,
-        activation='ReLU',
-        pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
-        num_blocks=2,
-        num_layers=3,
-    )
+    elif type_experiment == 6:
+        model = NBEATSModel(
+            input_chunk_length=12,
+            output_chunk_length=1,
+            n_epochs=120,
+            batch_size=16,
+            random_state=42,
+            activation='ReLU',
+            pl_trainer_kwargs={"accelerator": "gpu", "devices": 1},
+            num_blocks=2,
+            num_layers=3,
+        )
 
     model.fit(series)
 
@@ -158,7 +161,7 @@ def create_nbeats_model(forecast_steps, time_steps, data):
     y_test = df[-12:].values
 
    # Calculating evaluation metrics
-    y_baseline = df[-forecast_steps*2:-forecast_steps].values
+    y_baseline = df[-12*2:-12].values
     rrmse_result_time_moe = rrmse(y_test, y_pred, df[:-12].mean())
     mape_result_time_moe = mape(y_test, y_pred)
     pbe_result_time_moe = pbe(y_test, y_pred)
@@ -174,7 +177,7 @@ def create_nbeats_model(forecast_steps, time_steps, data):
         
     return rrmse_result_time_moe, mape_result_time_moe, pbe_result_time_moe, pocid_result_time_moe, mase_result_time_moe, y_pred, 
 
-def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_save, log_lock):
+def run_nbeats(state, product, type_experiment, data_filtered):
     """
     Execute nbeats model training and save the results to an Excel file.
 
@@ -199,12 +202,11 @@ def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_s
     try:
         # Run nbeats model training and capture performance metrics
         rrmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred = \
-        create_nbeats_model(forecast_steps=forecast_steps, time_steps=time_steps, data=data_filtered)
+        create_nbeats_model(type_experiment=type_experiment, data=data_filtered)
         
         # Create a DataFrame to store the results
-        results_df = pd.DataFrame([{'FORECAST_STEPS': forecast_steps,
-                                    'TIME_FORECAST': time_steps,
-                                    'TYPE_PREDICTIONS': 'N-BEATS6',
+        results_df = pd.DataFrame([{'TYPE_PREDICTIONS': 'N-BEATS',
+                                    'EXPERIMENT': 'Parameters_' + type_experiment,
                                     'STATE': state,
                                     'PRODUCT': product,
                                     'RRMSE': rrmse_result,
@@ -219,9 +221,8 @@ def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_s
         # Handle exceptions during model training
         print(f"An error occurred for product '{product}' in state '{state}': {e}")
         
-        results_df = pd.DataFrame([{'FORECAST_STEPS': np.nan,
-                                    'TIME_FORECAST': np.nan,
-                                    'TYPE_PREDICTIONS': 'N-BEATS6',
+        results_df = pd.DataFrame([{'TYPE_PREDICTIONS': 'N-BEATS',
+                                    'EXPERIMENT': 'Parameters_' + type_experiment,
                                     'STATE': state,
                                     'PRODUCT': product,
                                     'RRMSE': np.nan,
@@ -233,20 +234,18 @@ def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_s
                                     'ERROR': f"An error occurred for product '{product}' in state '{state}': {e}"}])
             
     # Save the results to an Excel file if requested
-    if bool_save:
-        with log_lock:
-            directory = f'results_model_local'
-            if not os.path.exists(directory):
-                os.makedirs(directory)
+    directory = f'results_model_local'
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
-            file_path = os.path.join(directory, 'nbeats_results6.xlsx')
-            if os.path.exists(file_path):
-                existing_df = pd.read_excel(file_path)
-            else:
-                existing_df = pd.DataFrame()
+    file_path = os.path.join(directory, 'nbeats_results.xlsx')
+    if os.path.exists(file_path):
+        existing_df = pd.read_excel(file_path)
+    else:
+        existing_df = pd.DataFrame()
 
-            combined_df = pd.concat([existing_df, results_df], ignore_index=True)
-            combined_df.to_excel(file_path, index=False)
+    combined_df = pd.concat([existing_df, results_df], ignore_index=True)
+    combined_df.to_excel(file_path, index=False)
 
     ## Calculate and display the execution time
     end_time = time.time()
@@ -254,32 +253,19 @@ def run_nbeats(state, product, forecast_steps, time_steps, data_filtered, bool_s
     print(f"Function execution time: {execution_time:.2f} seconds")
     print(f"Execution ended at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # Log execution details
-    log_entry = f"{time.strftime('%Y-%m-%d %H:%M:%S')}, {state}, {product}, {forecast_steps}, {time_steps}, {execution_time:.2f}\n"
-
-    # Write the log entry with a lock to prevent race conditions
-    with log_lock:
-        with open("training_log.csv", "a") as log_file:
-            log_file.write(log_entry)
-
-def run_nbeats_in_thread(forecast_steps, time_steps, bool_save):
+def run_nbeats_in_thread(type_experiment):
 
     """
     Execute nbeats model training in separate processes for different state and product combinations.
 
     Parameters:
-        - forecast_steps (int): Number of steps to forecast in the future.
-        - time_steps (int): Length of time steps (window size) for input data generation.
-        - bool_save (bool): Whether to save the trained models (True/False).
+        - type_experiment (int)
 
     Returns:
         None
     """
     # Set the multiprocessing start method
     multiprocessing.set_start_method("spawn")
-
-     # Lock for logging to prevent concurrent access
-    log_lock = multiprocessing.Lock()
 
      # Load combined dataset
     data_path = '../database/combined_data.csv'
@@ -306,11 +292,7 @@ def run_nbeats_in_thread(forecast_steps, time_steps, bool_save):
             # Create a separate process for running the nbeats model
             process = multiprocessing.Process(
                 target=run_nbeats,
-                args=(
-                    state, product, forecast_steps, time_steps,
-                    data_filtered, bool_save,
-                    log_lock, 
-                )
+                args=(state, product, type_experiment, data_filtered)
             )
 
             # Start and wait for the process to complete
@@ -348,7 +330,7 @@ def product_and_single_thread_testing():
 
     # Running the nbeats model
     y_pred = \
-    create_nbeats_model(forecast_steps=12, time_steps=12, data=data_filtered_test)
+    create_nbeats_model(type_experiment=1, data=data_filtered_test)
 
     # Recording end time and calculating execution duration
     end_time = time.time()

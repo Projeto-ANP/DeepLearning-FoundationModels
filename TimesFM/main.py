@@ -6,8 +6,7 @@ NOTE: Uncomment and comment out the code below as needed.
 
 '''
 
-import subprocess
-from times_fm_code_forecasting import product_and_single_thread_testing
+from times_fm_code_forecasting import product_and_single_thread_testing, run_all_in_thread
 
 if __name__ == "__main__":
     try:
@@ -24,20 +23,7 @@ if __name__ == "__main__":
         model: 200M or 500M
         
         ''' 
-        
-        processes = []
-
-        model = "500M"
-        
-        cmd = [
-            "python", "run_all_times_fm_script_5_years.py",
-            model,
-        ]
-        p = subprocess.Popen(cmd)
-        processes.append(p)
-        
-        for p in processes:
-            p.wait()
+        run_all_in_thread(type_model='500M')
 
     except Exception as e:
         print("An error occurred:", e)
