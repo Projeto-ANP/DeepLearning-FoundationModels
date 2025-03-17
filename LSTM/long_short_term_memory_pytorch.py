@@ -3,9 +3,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-import torch.nn.functional as F
-
-from sklearn.model_selection import train_test_split
+from functools import partial
+import optuna
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from sklearn.metrics import mean_absolute_percentage_error as mape
 
@@ -40,6 +40,18 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['TF_CUDNN_DETERMINISTIC'] = 'true'
 os.environ['TF_DETERMINISTIC_OPS'] = 'true'
+
+# Define LSTM model
+class LSTMModel(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, output_size, dropout=0.1):
+        super(LSTMModel, self).__init__()
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
+        self.linear = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        out, _ = self.lstm(x)
+        out = self.linear(out[:, -1, :])
+        return out
 
 # Function to convert a date string into a pandas Timestamp
 def convert_date(date_string):
@@ -103,10 +115,9 @@ def train_test_split_cisia(data, horizon, type_predictions):
         y_test = y[-horizon:] # target test
 
     else: 
-        X = data.iloc[:, :12]  # primeiras 12 colunas como features
-        y = data.iloc[:, 12:]  # últimas 12 colunas como target
+        X = data.iloc[:, :12]  
+        y = data.iloc[:, 12:]  
 
-        # Definir os conjuntos de treino e teste
         X_train = X[:-24]  # features train
         X_test = X[-1:]   # features test
 
@@ -143,29 +154,76 @@ def set_seed(seed_value=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, batch_size, type_predictions='recursive', show_plot=None):
+def objective(trial, device, X_train_val, X_val, y_train_val, y_test, df_mean, scaler, type_predictions):
+    batch_size = trial.suggest_categorical("batch_size", [16, 32, 64])
+    hidden_size = trial.suggest_int("hidden_size", 32, 256, step=32)
+    num_layers = trial.suggest_int("num_layers", 1, 3)
+    dropout = trial.suggest_categorical("dropout", [0.0, 0.05, 0.10])
+    lr = trial.suggest_categorical("lr", [1e-3, 1e-4, 5e-5, 2e-5, 1e-6])
+
+    if type_predictions == 'recursive':
+        int_dense = 1
+    else:
+        int_dense = 12
+
+    # DataLoader setup
+    train_loader = DataLoader(TensorDataset(X_train_val, y_train_val), batch_size=batch_size, shuffle=True)
+
+    model = LSTMModel(1, hidden_size, num_layers, int_dense, dropout).to(device)
+    loss_fn = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+
+    # Training loop
+    for epoch in range(100):
+        model.train()
+        total_loss = 0.0
+        
+        for X_batch, y_batch in train_loader:
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+
+            optimizer.zero_grad()
+            y_pred = model(X_batch)
+            loss = loss_fn(y_pred, y_batch)
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+
+        avg_loss = total_loss / len(train_loader)
+        print(f"Epoch {epoch+1}/100 - Training Loss: {avg_loss:.6f}")
+
+    # Forecasting and evaluation
+    if type_predictions == "recursive":
+        y_pred = scaler.inverse_transform(np.hstack([recursive_multistep_forecasting(X_val, model, 12, device).reshape(-1, 1), np.zeros((12, 12 - 1))]))[:, 0]
+    else:
+        model.eval()
+        X_val = X_val[-1].to(device)
+
+        with torch.no_grad():
+            y_pred = model(X_val).cpu().numpy()  
+
+        y_pred = scaler.inverse_transform(y_pred).flatten()
+    
+    rrmse_result_time_moe = rrmse(y_test, y_pred, df_mean)
+    print(f'\n\nRRMSE: {rrmse_result_time_moe}')
+    return rrmse_result_time_moe
+
+def create_lstm_model(data, type_predictions='recursive'):
     """
-    Create and train an LSTM model for time series forecasting with recursive or direct predictions.
+    Creates and trains an LSTM model for time series forecasting using recursive or direct predictions.
 
     Parameters:
-        - forecast_steps (int): Number of steps to forecast.
-        - time_steps (int): Length of the time window for input sequences.
-        - data (DataFrame): Input data containing the time series values (m3).
-        - epochs (int): Number of training epochs.
-        - state (str): State identifier for the data.
-        - product (str): Product identifier for the data.
-        - batch_size (int): Size of the training batches.
-        - type_predictions (str, optional): Prediction mode, either 'recursive' or 'direct'. Default is 'recursive'.
-        - show_plot (bool, optional): Flag to display and save plots of predictions.
+    - data (pd.DataFrame): The input DataFrame containing time series values.
+    - type_predictions (str, optional): Specifies the prediction mode, either 'recursive' or 'direct'. Default is 'recursive'.
 
     Returns:
-        - rrmse_result_lstm (float).
-        - mape_result_lstm (float).
-        - pbe_result_lstm (float).
-        - pocid_result_lstm (float).
-        - mase_result_lstm (float).
-        - y_pred (ndarray): Predicted values.
-        - batch_size (int): Batch size used for training.
+    - rrmse_result_lstm (float): Relative Root Mean Squared Error.
+    - mape_result_lstm (float): Mean Absolute Percentage Error.
+    - pbe_result_lstm (float): Percentage Bias Error.
+    - pocid_result_lstm (float): Percentage of Correct Increase or Decrease.
+    - mase_result_lstm (float): Mean Absolute Scaled Error.
+    - y_pred (np.ndarray): Array containing the predicted values.
+    - best_params (dict): The best hyperparameters found for the model.
     """
 
     df = data['m3']
@@ -175,13 +233,13 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
         int_dense = 1
 
         # Prepare data for recursive predictions
-        data = rolling_window(df, time_steps, type_predictions)
-        X_train, X_test, y_train, y_test = train_test_split_cisia(data, forecast_steps, type_predictions)
+        data = rolling_window(df, 12, type_predictions)
+        X_train, X_test, y_train, y_test = train_test_split_cisia(data, 12, type_predictions)
 
         y_train = y_train.values.reshape(-1, 1)
         y_test = y_test.values.reshape(-1, 1)
-        y_train = np.hstack([y_train, np.zeros((y_train.shape[0], time_steps - 1))])
-        y_test = np.hstack([y_test, np.zeros((y_test.shape[0], time_steps - 1))])
+        y_train = np.hstack([y_train, np.zeros((y_train.shape[0], 12 - 1))])
+        y_test = np.hstack([y_test, np.zeros((y_test.shape[0], 12 - 1))])
 
         scaler = MinMaxScaler(feature_range=(-1, 1))
         X_train = scaler.fit_transform(X_train)
@@ -194,7 +252,7 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
 
         # Prepare data for direct predictions
         data = df.values.reshape(-1, 1)
-        X, y = create_dataset_direct(data, time_steps, forecast_steps)
+        X, y = create_dataset_direct(data, 12, 12)
 
         X_train, X_test = X[:-24], X[-1:]
         y_train, y_test = y[:-24], y[-1:]
@@ -205,140 +263,71 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
         X_test = scaler.transform(X_test)
         y_test = scaler.transform(y_test)
 
-    # Convert data to PyTorch tensors
-    X_train_val, X_val, y_train_val, y_val = train_test_split(X_train, y_train, test_size=0.10, random_state=42, shuffle=False)
+    X_train_val, X_val = X_train[:-12], X_train[-12:]
+    y_train_val, y_val = y_train[:-12], y_train[-12:]
 
+    # Convert data to PyTorch tensors
     X_train_val = torch.tensor(X_train_val, dtype=torch.float32).unsqueeze(-1)
     y_train_val = torch.tensor(y_train_val, dtype=torch.float32)
     X_val = torch.tensor(X_val, dtype=torch.float32).unsqueeze(-1)
     y_val = torch.tensor(y_val, dtype=torch.float32)
-    X_test = torch.tensor(X_test, dtype=torch.float32).unsqueeze(-1)
-
-    # Define LSTM model
-    class LSTMModel(nn.Module):
-        def __init__(self, input_size, hidden_size, num_layers, dropout=0.2):
-            super(LSTMModel, self).__init__()
-            self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
-            self.linear = nn.Linear(hidden_size, output_size)
-
-        def forward(self, x):
-            out, _ = self.lstm(x)
-            out = self.linear(out[:, -1, :])
-            return out
-        
-        # def forward(self, x):
-        #     out, _ = self.lstm(x)
-        #     out = F.relu(out[:, -1, :])  
-        #     out = self.linear(out)
-        #     return out
-        
-        # def forward(self, x):
-        #     out, _ = self.lstm(x)
-        #     out = torch.tanh(out[:, -1, :])  
-        #     out = self.linear(out)
-        #     return out
 
     # Set device and initialize model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # INFO: First experiment
-    # set_seed(42)
-    # input_size = 1
-    # num_layers = 3
-    # epochs = 100
-    # hidden_size = 128
-    # output_size = int_dense
-    # dropout = 0.15
-    # model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
-    # loss_fn = nn.MSELoss()
-    # optimizer = optim.Adam(model.parameters(), lr=0.01)
 
-    # INFO: Second experiment
-    # set_seed(42)
-    # input_size = 1
-    # num_layers = 4
-    # epochs = 100
-    # hidden_size = 64
-    # output_size = int_dense
-    # dropout = 0.1
-    # model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
-    # loss_fn = nn.SmoothL1Loss()
-    # optimizer = optim.Adam(model.parameters(), lr=0.005)
-
-    # INFO: Third experiment
-    # set_seed(42)
-    # input_size = 1
-    # num_layers = 2
-    # epochs = 50
-    # hidden_size = 256
-    # output_size = int_dense
-    # dropout = 0.2
-    # model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
-    # loss_fn = nn.MSELoss()
-    # optimizer = optim.AdamW(model.parameters(), lr=5e-5)
-
-    # INFO: Fourth experiment
-    # set_seed(42)
-    # input_size = 1
-    # num_layers = 2
-    # epochs = 75
-    # hidden_size = 32
-    # output_size = int_dense
-    # dropout = 0.05
-    # model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
-    # loss_fn = nn.SmoothL1Loss()
-    # optimizer = optim.RMSprop(model.parameters(), lr=1e-4)
-
-    # INFO: Fifth experiment
-    # set_seed(42)
-    # input_size = 1
-    # num_layers = 1
-    # epochs = 120
-    # hidden_size = 64
-    # output_size = int_dense
-    # dropout = 0.1
-    # model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
-    # loss_fn = nn.HuberLoss()
-    # optimizer = optim.Adam(model.parameters(), lr=2e-5)
-
-    # INFO: Sixth  experiment
     set_seed(42)
+    study = optuna.create_study(direction="minimize", pruner=optuna.pruners.MedianPruner(n_warmup_steps=10))
+    objective_func = partial(objective, 
+                             device = device,
+                             X_train_val = X_train_val, 
+                             X_val = X_val, 
+                             y_train_val = y_train_val, 
+                             y_test=df[:-12][-12:].values, 
+                             df_mean=df[:-24].mean(),
+                             scaler=scaler,
+                             type_predictions= type_predictions)
+    
+    study.optimize(objective_func, n_trials=150)
+    best_params = study.best_params
+
     input_size = 1
-    num_layers = 3
-    epochs = 100
-    hidden_size = 32
+    num_layers = best_params["num_layers"]
+    hidden_size = best_params["hidden_size"]
     output_size = int_dense
-    dropout = 0.15
-    model = LSTMModel(input_size, hidden_size, num_layers, dropout).to(device)
+    dropout = best_params["dropout"]
+    model = LSTMModel(input_size, hidden_size, num_layers, output_size, dropout).to(device)
     loss_fn = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    optimizer = optim.Adam(model.parameters(), lr=best_params["lr"])
 
     # DataLoader setup
-    train_loader = DataLoader(TensorDataset(X_train_val, y_train_val), batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=batch_size, shuffle=False)
+    X_train = torch.tensor(X_train, dtype=torch.float32).unsqueeze(-1)
+    y_train = torch.tensor(y_train, dtype=torch.float32)
+    X_test = torch.tensor(X_test, dtype=torch.float32).unsqueeze(-1)
+
+    train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=best_params["batch_size"], shuffle=False)
 
     # Training loop
-    for epoch in range(epochs):
+    for epoch in range(100):
         model.train()
         total_loss = 0.0
-        for batch_X, batch_y in train_loader:
-            batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+        
+        for X_batch, y_batch in train_loader:
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+
             optimizer.zero_grad()
-            predictions = model(batch_X)
-            loss = loss_fn(predictions, batch_y)
+            y_pred = model(X_batch)
+            loss = loss_fn(y_pred, y_batch)
             loss.backward()
             optimizer.step()
+
             total_loss += loss.item()
 
-        model.eval()
-        total_test_loss = sum(loss_fn(model(X.to(device)), y.to(device)).item() for X, y in test_loader) / len(test_loader)
-
-        if (epoch + 1) % 10 == 0:
-            print(f'Epoch [{epoch + 1}/{epochs}] - Training Loss: {total_loss / len(train_loader):.4f}, Test Loss: {total_test_loss:.4f}')
+        avg_loss = total_loss / len(train_loader)
+        print(f"Epoch {epoch+1}/100 - Training Loss: {avg_loss:.6f}")
 
     # Forecasting and evaluation
     if type_predictions == "recursive":
-        y_pred = scaler.inverse_transform(np.hstack([recursive_multistep_forecasting(X_test, model, forecast_steps, device).reshape(-1, 1), np.zeros((forecast_steps, time_steps - 1))]))[:, 0]
+        y_pred = scaler.inverse_transform(np.hstack([recursive_multistep_forecasting(X_test, model, 12, device).reshape(-1, 1), np.zeros((12, 12 - 1))]))[:, 0]
     else:
         model.eval()
 
@@ -349,40 +338,34 @@ def create_lstm_model(forecast_steps, time_steps, data, epochs, state, product, 
 
         y_pred = scaler.inverse_transform(y_pred).flatten()
 
-    y_test = df[-forecast_steps:].values
-    y_baseline = df[-forecast_steps * 2:-forecast_steps].values
+    y_test = df[-12:].values
+    y_baseline = df[-12 * 2:-12].values
 
     # Evaluation metrics
-    y_baseline = df[-forecast_steps*2:-forecast_steps].values
+    y_baseline = df[-12*2:-12].values
     rrmse_result_lstm = rrmse(y_test, y_pred, df[:-12].mean())
     mape_result_lstm = mape(y_test, y_pred)
     pbe_result_lstm = pbe(y_test, y_pred)
     pocid_result_lstm = pocid(y_test, y_pred)
     mase_result_lstm = np.mean(np.abs(y_test - y_pred)) / np.mean(np.abs(y_test - y_baseline))
 
-    print(f"\nResultados modelo: LSTM_{type_predictions} \n")
+    print(f"\nMetrics: LSTM_{type_predictions} \n")
     print(f'RRMSE: {rrmse_result_lstm}')
     print(f'MAPE: {mape_result_lstm}')
     print(f'PBE: {pbe_result_lstm}')
     print(f'POCID: {pocid_result_lstm}')
     print(f'MASE: {mase_result_lstm}')
         
-    return rrmse_result_lstm, mape_result_lstm, pbe_result_lstm, pocid_result_lstm, mase_result_lstm, y_pred, batch_size
+    return rrmse_result_lstm, mape_result_lstm, pbe_result_lstm, pocid_result_lstm, mase_result_lstm, y_pred, best_params
                     
-def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, bool_save, log_lock, batch_size, type_predictions='recursive'):
+def run_lstm(state, product, data_filtered, type_predictions='recursive'):
     """
     Execute LSTM model training and save the results to an Excel file.
 
     Parameters:
         - state (str): State for which the LSTM model is trained.
         - product (str): Product for which the LSTM model is trained.
-        - forecast_steps (int): Number of steps to forecast in the future.
-        - time_steps (int): Length of time steps (window size) for input data generation.
         - data_filtered (pd.DataFrame): Filtered dataset containing data for the specific state and product.
-        - epochs (int): Number of training epochs for the LSTM model.
-        - bool_save (bool): Whether to save the results to an Excel file.
-        - log_lock (multiprocessing.Lock): Lock for synchronized logging.
-        - batch_size (int): Batch size for model training.
         - type_predictions (str, optional): Type of prediction method ('recursive' or 'direct_dense12'). Default is 'recursive'.
 
     Returns:
@@ -396,13 +379,14 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
 
     try:
         # Run LSTM model training and capture performance metrics
-        rrmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred, batch_size = \
-        create_lstm_model(forecast_steps=forecast_steps, time_steps=time_steps, epochs=epochs, data=data_filtered, state=state, product=product, batch_size=batch_size, type_predictions=type_predictions, show_plot=True)
+        rrmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred, best_params = \
+        create_lstm_model(data=data_filtered, type_predictions=type_predictions)
         
         # Create a DataFrame to store the results
-        results_df = pd.DataFrame([{'FORECAST_STEPS': forecast_steps,
-                                    'TIME_FORECAST': time_steps,
-                                    'TYPE_PREDICTIONS': 'LSTM6_PYTORCH_' + type_predictions,
+        results_df = pd.DataFrame([{'MODEL': 'LSTM',
+                                    'TYPE_MODEL': 'LSTM',
+                                    'TYPE_PREDICTIONS': 'LSTM_' + type_predictions,
+                                    'PARAMETERS': best_params,
                                     'STATE': state,
                                     'PRODUCT': product,
                                     'RRMSE': rrmse_result,
@@ -411,15 +395,15 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
                                     'POCID': pocid_result,
                                     'MASE': mase_result,
                                     'PREDICTIONS': y_pred,
-                                    'BATCH_SIZE': batch_size,
                                     'ERROR': np.nan}])
     except Exception as e:
         # Handle exceptions during model training
         print(f"An error occurred for product '{product}' in state '{state}': {e}")
         
-        results_df = pd.DataFrame([{'FORECAST_STEPS': np.nan,
-                                    'TIME_FORECAST': np.nan,
-                                    'TYPE_PREDICTIONS': 'LSTM6_PYTORCH_' + type_predictions,
+        results_df = pd.DataFrame([{'MODEL': 'LSTM',
+                                    'TYPE_MODEL': 'LSTM',
+                                    'TYPE_PREDICTIONS': 'LSTM_' + type_predictions,
+                                    'PARAMETERS': best_params,
                                     'STATE': state,
                                     'PRODUCT': product,
                                     'RRMSE': np.nan,
@@ -428,24 +412,21 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
                                     'POCID': np.nan,
                                     'MASE': np.nan,
                                     'PREDICTIONS': np.nan,
-                                    'BATCH_SIZE': np.nan,
                                     'ERROR': f"An error occurred for product '{product}' in state '{state}': {e}"}])
             
     # Save the results to an Excel file if requested
-    if bool_save:
-        with log_lock:
-            directory = f'results_model_local'
-            if not os.path.exists(directory):
-                os.makedirs(directory)
+    directory = f'results_model_local'
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
-            file_path = os.path.join(directory, 'lstm_results6_pytorch.xlsx')
-            if os.path.exists(file_path):
-                existing_df = pd.read_excel(file_path)
-            else:
-                existing_df = pd.DataFrame()
+    file_path = os.path.join(directory, 'lstm_results_pytorch.xlsx')
+    if os.path.exists(file_path):
+        existing_df = pd.read_excel(file_path)
+    else:
+        existing_df = pd.DataFrame()
 
-            combined_df = pd.concat([existing_df, results_df], ignore_index=True)
-            combined_df.to_excel(file_path, index=False)
+    combined_df = pd.concat([existing_df, results_df], ignore_index=True)
+    combined_df.to_excel(file_path, index=False)
 
     ## Calculate and display the execution time
     end_time = time.time()
@@ -453,34 +434,18 @@ def run_lstm(state, product, forecast_steps, time_steps, data_filtered, epochs, 
     print(f"Function execution time: {execution_time:.2f} seconds")
     print(f"Execution ended at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # Log execution details
-    log_entry = f"{time.strftime('%Y-%m-%d %H:%M:%S')}, {state}, {product}, {forecast_steps}, {time_steps}, {type_predictions}, {execution_time:.2f}\n"
-
-    # Write the log entry with a lock to prevent race conditions
-    with log_lock:
-        with open("training_log.csv", "a") as log_file:
-            log_file.write(log_entry)
-
-def run_lstm_in_thread(forecast_steps, time_steps, epochs, bool_save, batch_size, type_predictions='recursive'):
+def run_lstm_in_thread(type_predictions='recursive'):
     """
     Execute LSTM model training in separate processes for different state and product combinations.
 
     Parameters:
-        - forecast_steps (int): Number of steps to forecast in the future.
-        - time_steps (int): Length of time steps (window size) for input data generation.
-        - epochs (int): Number of training epochs for the LSTM model.
-        - bool_save (bool): Whether to save the trained models (True/False).
-        - batch_size (int): Batch size for model training.
-        - type_predictions (str, optional): Type of prediction method ('recursive' or 'direct_dense12'). Default is 'recursive'.
+        - type_predictions (str, optional): Type of prediction method ('recursive' or 'direct'). Default is 'recursive'.
 
     Returns:
         None
     """
     # Set the multiprocessing start method
     multiprocessing.set_start_method("spawn")
-
-     # Lock for logging to prevent concurrent access
-    log_lock = multiprocessing.Lock()
 
      # Load combined dataset
     data_path = '../database/combined_data.csv'
@@ -508,9 +473,9 @@ def run_lstm_in_thread(forecast_steps, time_steps, epochs, bool_save, batch_size
             process = multiprocessing.Process(
                 target=run_lstm,
                 args=(
-                    state, product, forecast_steps, time_steps,
-                    data_filtered, epochs, bool_save,
-                    log_lock, batch_size, type_predictions
+                    state, product,
+                    data_filtered,
+                    type_predictions
                 )
             )
 
@@ -548,9 +513,9 @@ def product_and_single_thread_testing():
     start_time = time.time()
 
     # Running the LSTM model
-    rmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred, batch_size = \
-    create_lstm_model(forecast_steps=12, time_steps=12, data=data_filtered_test, epochs=100, state=state, product=product,
-                      batch_size=16, type_predictions='direct', show_plot=True)
+    rrmse_result, mape_result, pbe_result, pocid_result, mase_result, y_pred, best_params = \
+    create_lstm_model(data=data_filtered_test,
+                      type_predictions='recursive')
 
     # Recording end time and calculating execution duration
     end_time = time.time()

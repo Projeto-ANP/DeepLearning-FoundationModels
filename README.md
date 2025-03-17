@@ -1,16 +1,18 @@
-# Deep Learning Models for Petroleum Derivatives Sales Forecasting
+# Deep Learning and Foundation Models for Petroleum Derivatives Sales Forecasting
 
 ---
 
 ## Description
 
-This repository gathers the codes and results from experiments conducted using various **deep learning models** applied to forecasting petroleum derivatives sales. The analyzed models include:  
+This repository gathers the code and results from experiments conducted using various **deep learning models** and some **foundation models** applied to the forecasting of petroleum derivatives sales. The analyzed models include:
 
 - **LSTM (Long Short-Term Memory)**  
 - **N-BEATS (Neural Basis Expansion Analysis Time Series)**  
 - **Time-MoE (Time Mixture of Experts)**  
+- **TimesFM**  
+- **Morai**  
 
-Each model is organized in its own directory, with specific and well-documented codes to ensure easy navigation and understanding by users.  
+Each model is organized in its own directory, with specific and documented codes to ensure easy navigation and understanding.  
 
 In addition, detailed analyses of the results obtained during the experiments are available in the file `analysis_of_results.ipynb`. This notebook provides:  
 - Charts illustrating patterns and predictions made by the models;  

@@ -32,7 +32,3 @@ The data is organized with the following main columns:
 The data and content of this repository adhere to the public use standards set by ANP. Refer to the official terms for more details.
 
 ---
-
-## ✉️ Contato | Contact
-
-If you have any questions or suggestions, feel free to open an issue in this repository.

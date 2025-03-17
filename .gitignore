@@ -1,7 +1,8 @@
-database/venda_process/anual/*
-Features/01-ALLFEAT_concatenated/contanet.py
-Features/00-features_salvas/CODE-ExtractFEATURES/*
-LSTM/Models_Keras
+database/venda_process/*
+Time-MoE/model_fine_tuning_optuna_last_year*
+Time-MoE/model_time_moe2.py
+Time-MoE/model_time_moe3.py
+Time-MoE/model_time_moe4.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
